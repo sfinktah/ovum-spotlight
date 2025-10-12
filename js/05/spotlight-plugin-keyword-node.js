@@ -36,7 +36,11 @@ app.registerExtension({
             ctx?.setPlaceholder?.("Search node titles, node ids, subgraph ids...");
             try {
                 const list = ctx?.collectAllNodesRecursive?.() || [];
+                const makeNodeItem = window?.OvumSpotlight?.makeNodeItem;
                 const items = list.map(({node, displayId, parentChain}) => {
+                    if (typeof makeNodeItem === 'function') {
+                        return makeNodeItem({ node, displayId, parentChain });
+                    }
                     const widgetText = node.widgets && Array.isArray(node.widgets) ? node.widgets.map(w => `${w.name}:${w.value}`).join(" ") : "";
                     return ({
                         "@type": "node",

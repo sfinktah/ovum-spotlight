@@ -1,3 +1,5 @@
+// noinspection RegExpSimplifiable
+
 import {app} from "../../../scripts/app.js";
 import {Fzf} from "/ovum-spotlight/node_modules/fzf/dist/fzf.es.js";
 import {buildUI, getPositionsInRange, highlightText, updateActiveState} from "./spotlight-helper-dom.js";
@@ -38,6 +40,9 @@ import {createShowResult} from "./spotlight-helper-showresult.js";
 /** @typedef {import("./spotlight-typedefs.js").KeywordHandler} KeywordHandler */
 /** @typedef {import("./spotlight-typedefs.js").DefaultHandler} DefaultHandler */
 /** @typedef {import("./spotlight-typedefs.js").ISpotlightRegistry} ISpotlightRegistry */
+/** @typedef {import("./spotlight-typedefs.js").IFilterRegistry} IFilterRegistry */
+/** @typedef {import("./spotlight-typedefs.js").FilterFn} FilterFn */
+/** @typedef {import("./spotlight-typedefs.js").ParsedFilter} ParsedFilter */
 
 // Encapsulated runtime state and constants for Spotlight interactions
 const SpotlightRuntime = {
@@ -104,6 +109,145 @@ const SpotlightRegistry = {
     }
 };
 
+// Helper to build flat search text and offsets from nested array [title, itemClass, subtitleNames[], detailPairs[]]
+function buildSearchFromJson (searchJson) {
+    const parts = [];
+    const offsets = { title: [0, 0], itemClass: [0, 0], subtitles: [], details: [] };
+    let pos = 0;
+    const pushPart = (text) => {
+        const start = pos;
+        const t = String(text || "");
+        pos += t.length;
+        const end = pos;
+        parts.push(t);
+        return [start, end];
+    };
+    const pushSep = () => { parts.push(" "); pos += 1; };
+
+    const title = searchJson?.[0] ?? "";
+    const itemClass = searchJson?.[1] ?? "";
+    const subtitles = Array.isArray(searchJson?.[2]) ? searchJson[2] : [];
+    const details = Array.isArray(searchJson?.[3]) ? searchJson[3] : [];
+
+    // title
+    offsets.title = pushPart(title);
+    pushSep();
+    // class
+    offsets.itemClass = pushPart(itemClass);
+    pushSep();
+    // subtitles
+    for (let i = 0; i < subtitles.length; i++) {
+        const s = String(subtitles[i] ?? "");
+        const [start, end] = pushPart(s);
+        offsets.subtitles.push({ text: s, start, end });
+        if (i < subtitles.length - 1) { pushSep(); }
+    }
+    if (subtitles.length) { pushSep(); }
+    // details
+    for (let i = 0; i < details.length; i++) {
+        const d = String(details[i] ?? "");
+        const [start, end] = pushPart(d);
+        offsets.details.push({ text: d, start, end });
+        if (i < details.length - 1) { pushSep(); }
+    }
+
+    const flat = parts.join("");
+    return { flat, offsets };
+}
+
+// Registry for per-node extra info providers, so UI scripts can enrich spotlight search/display
+const NodeInfoProviders = {
+    // key: node type (comfyClass or type) lowercased -> provider function
+    map: new Map(),
+    /**
+     * Register a provider for a node type.
+     * @param {string} nodeType
+     * @param {(node:any)=>({details?:string[]|string, itemClass?:string, itemClassSuffix?:string, titleSuffix?:string})} fn
+     */
+    register (nodeType, fn) {
+        if (!nodeType || typeof fn !== 'function') return;
+        this.map.set(String(nodeType).toLowerCase(), fn);
+    },
+    /**
+     * Query providers and optional node instance method to get extra info.
+     * @param {any} node
+     */
+    get (node) {
+        const out = { details: [], itemClass: undefined, itemClassSuffix: undefined, titleSuffix: undefined };
+        try {
+            // 1) Instance-level hook (UI can patch node.getSpotlightInfo = () => ({...}))
+            const inst = typeof node?.getSpotlightInfo === 'function' ? node.getSpotlightInfo() : null;
+            if (inst && typeof inst === 'object') {
+                if (Array.isArray(inst.details)) out.details.push(...inst.details.map(String));
+                else if (typeof inst.details === 'string') out.details.push(inst.details);
+                if (typeof inst.itemClass === 'string') out.itemClass = inst.itemClass;
+                if (typeof inst.itemClassSuffix === 'string') out.itemClassSuffix = inst.itemClassSuffix;
+                if (typeof inst.titleSuffix === 'string') out.titleSuffix = inst.titleSuffix;
+            }
+            // 2) Registered provider by node.comfyClass or node.type
+            const keyA = String(node?.comfyClass || '').toLowerCase();
+            const keyB = String(node?.type || '').toLowerCase();
+            const fn = this.map.get(keyA) || this.map.get(keyB);
+            if (fn) {
+                const info = fn(node) || {};
+                if (Array.isArray(info.details)) out.details.push(...info.details.map(String));
+                else if (typeof info.details === 'string') out.details.push(info.details);
+                if (typeof info.itemClass === 'string') out.itemClass = info.itemClass;
+                if (typeof info.itemClassSuffix === 'string') out.itemClassSuffix = info.itemClassSuffix;
+                if (typeof info.titleSuffix === 'string') out.titleSuffix = info.titleSuffix;
+            }
+        } catch (e) {
+            console.warn('OvumSpotlight: node info provider error', e);
+        }
+        return out;
+    }
+};
+
+// Expose API for UI scripts to register providers
+// @ts-ignore
+window.OvumSpotlight = window.OvumSpotlight || {};
+// @ts-ignore
+window.OvumSpotlight.registerNodeInfoProvider = (nodeType, fn) => NodeInfoProviders.register(nodeType, fn);
+
+// Factory for node SpotlightItem with nested search JSON and offsets for highlighting
+function makeNodeItem ({ node, displayId, parentChain }) {
+    const className = node.comfyClass || node.type;
+    const baseTitle = `${node.title || className}`;
+    const extra = NodeInfoProviders.get(node);
+    const title = `${baseTitle}${extra.titleSuffix ? ' ' + extra.titleSuffix : ''}  [${displayId}]`;
+    let itemClass = node.type;
+    if (extra.itemClass) itemClass = extra.itemClass;
+    else if (extra.itemClassSuffix) itemClass = `${itemClass} ${extra.itemClassSuffix}`;
+
+    const subtitleNames = Array.isArray(parentChain) ? parentChain.map(p => p?.title || p?.type).filter(Boolean) : [];
+    const detailPairs = (node.widgets && Array.isArray(node.widgets)) ? node.widgets.map(w => `${w.name}:${w.value}`) : [];
+    const extraDetails = Array.isArray(extra.details) ? extra.details : [];
+    const allDetails = detailPairs.concat(extraDetails);
+
+    const searchJson = [node.title || node.type || "", itemClass || "", subtitleNames, allDetails];
+    const { flat: searchFlat, offsets: searchOffsets } = buildSearchFromJson(searchJson);
+
+    return {
+        "@type": "node",
+        id: displayId,
+        title,
+        itemClass,
+        node,
+        itemSubtitlePath: parentChain,
+        itemDetails: allDetails.join(" "),
+        searchText: searchFlat, // keep compatibility with existing selector
+        searchJson,
+        searchFlat,
+        searchOffsets
+    };
+}
+
+// Expose helper for external modules
+// @ts-ignore
+window.OvumSpotlight = window.OvumSpotlight || {};
+// @ts-ignore
+window.OvumSpotlight.makeNodeItem = makeNodeItem;
+
 
 // Expose a global hook so custom nodes can register from their JS
 // Usage: window.OvumSpotlight?.registerKeywordHandler("mykey", (text)=>({...}))
@@ -111,6 +255,99 @@ const SpotlightRegistry = {
 /** @type {ISpotlightRegistry} */
 // @ts-ignore - augmenting window with OvumSpotlight
 window.OvumSpotlight = window.OvumSpotlight || SpotlightRegistry;
+
+// Simple filter registry, similar to keyword registry
+// External modules can register filters by name. If no filter matches, fallback assumes filterName is a widget name.
+/** @type {IFilterRegistry} */
+const FilterRegistry = {
+    filters: new Map(), // name -> (item, value) => boolean | Promise<boolean>
+    registerFilter (name, callback) {
+        if (!name || typeof callback !== "function") return;
+        this.filters.set(String(name).toLowerCase(), callback);
+    }
+};
+
+// Expose filter API on the same global
+// @ts-ignore - augment window.OvumSpotlight with registerFilter
+window.OvumSpotlight = window.OvumSpotlight || {};
+/** @type {(name:string, fn: FilterFn)=>void} */
+// @ts-ignore
+window.OvumSpotlight.registerFilter = (name, fn) => FilterRegistry.registerFilter(name, fn);
+
+/**
+ * Parse filters of the form name:value or name:"value with spaces" from the query.
+ * Returns remaining text with filters removed and an array of filters.
+ * @param {string} q
+ * @returns {{ text:string, filters: ParsedFilter[] }}
+ */
+function parseFilters (q) {
+    if (!q) return { text: "", filters: [] };
+    const filters = [];
+    // Match filter patterns of form name:value or name:"value with spaces"
+    // (\b\w+)      - Capture word boundary followed by word chars (filter name)
+    // :            - Literal colon separator
+    // (?:          - Start non-capturing group for value alternatives:
+    //   "([^"]+)"  - 1) Quoted value: quotes containing non-quote chars
+    //   |          - OR
+    //   ([^\s]+)   - 2) Unquoted value: sequence of non-whitespace chars
+    // )            - End non-capturing group
+    const re = /(\b\w+):(?:"([^"]+)"|([^\s]+))/g;
+    let m;
+    while ((m = re.exec(q)) !== null) {
+        const name = m[1];
+
+        // Extract filter value from regex groups: m[2] contains quoted value if present ("value"),
+        // m[3] contains unquoted value if no quotes (value), fallback to empty string if neither matched
+        const value = m[2] != null ? m[2] : (m[3] != null ? m[3] : "");
+        filters.push({ name, value, raw: m[0] });
+    }
+    // Remove all matched filters from the text
+    const text = q.replace(re, " ").replace(/\s+/g, " ").trim();
+    return { text, filters };
+}
+
+/**
+ * Apply parsed filters to the items list. If a filter name is registered, use it; otherwise fallback to widget name matching.
+ * @param {any[]} items
+ * @param {{ name:string, value:string }[]} filters
+ * @returns {Promise<any[]>}
+ */
+async function applyFilters (items, filters) {
+    if (!Array.isArray(filters) || filters.length === 0) return items;
+    const out = [];
+    for (const it of items) {
+        let ok = true;
+        for (const f of filters) {
+            const reg = FilterRegistry.filters.get(String(f.name).toLowerCase());
+            if (reg) {
+                try {
+                    const maybe = reg(it, f.value);
+                    const passed = (typeof maybe?.then === 'function') ? await maybe : !!maybe;
+                    if (!passed) { ok = false; break; }
+                } catch (_) {
+                    ok = false; break;
+                }
+            } else {
+                // Fallback: treat name as widget name and perform case-insensitive substring match on its value
+                const node = it?.node;
+                if (!node || !Array.isArray(node.widgets)) { ok = false; break; }
+                const targetName = String(f.name).toLowerCase();
+                const targetVal = String(f.value).toLowerCase();
+                let matched = false;
+                for (const w of node.widgets) {
+                    const wName = String(w?.name ?? "").toLowerCase();
+                    if (wName === targetName) {
+                        const wVal = String(w?.value ?? "").toLowerCase();
+                        if (targetVal === "" || wVal.indexOf(targetVal) !== -1) { matched = true; break; }
+                    }
+                }
+                if (!matched) { ok = false; break; }
+            }
+        }
+        if (ok) out.push(it);
+    }
+    return out;
+}
 
 /**
  * Parse the user's query to detect an active keyword registered via registerKeywordHandler.
@@ -169,19 +406,7 @@ async function searchData (q) {
     // default (no handler): core list + contributions from default handlers
     const allNodesWithSubgraphs = collectAllNodesRecursive();
     let items = allNodesWithSubgraphs.map(({node, id, displayId, parentChain}) => {
-        const widgetText = node.widgets && Array.isArray(node.widgets) ? node.widgets.map(w => `${w.name}:${w.value}`).join(" ") : "";
-        const className = node.comfyClass || node.type;
-        const title = `${node.title || className}  [${displayId}]`;
-        return {
-            "@type": "node",
-            id: displayId,
-            title,
-            itemClass: node.type,
-            node,
-            itemSubtitlePath: parentChain,
-            itemDetails: widgetText,
-            searchText: `${node.title || node.type} ${node.type} ${className} ${displayId} ${widgetText}`
-        };
+        return makeNodeItem({ node, displayId, parentChain });
     });
 
     // Let default handlers add more items (support async)
@@ -546,12 +771,18 @@ app.registerExtension({
                 state.handler = "";
             }
 
-            state.items = items;
-            const searchText = parseResult.text;
+            // Parse and apply filters (key:value or key:"value with spaces")
+            const filterParse = parseFilters(parseResult.text);
+            const searchTextForFzf = filterParse.text;
+            const highlightTextQuery = [filterParse.text, ...filterParse.filters.map(f => f.value)].filter(Boolean).join(" ");
+
+            const filteredItems = await applyFilters(items, filterParse.filters);
+            state.items = filteredItems;
+
             const maxMatches = app.ui.settings.getSettingValue("ovum.spotlightMaxMatches") ?? 100;
             const visibleItems = app.ui.settings.getSettingValue("ovum.spotlightVisibleItems") ?? 6;
-            const fzf = new Fzf(items, {selector: (it) => it.searchText || (it.title + (it.sub ? " " + it.sub : "") + " " + it.id)});
-            const matches = fzf.find(searchText).slice(0, maxMatches);
+            const fzf = new Fzf(filteredItems, {selector: (it) => it.searchText || (it.title + (it.sub ? " " + it.sub : "") + " " + it.id)});
+            const matches = fzf.find(searchTextForFzf).slice(0, maxMatches);
             state.results = matches;
             state.active = 0;
             if (window.Logger?.log) { Logger.log({ class: 'ovum.spotlight', method: 'refresh', severity: 'trace', tag: 'fzf', nodeName: 'ovum.timer' }, 'fzf matches', matches.slice(0, visibleItems)); }
@@ -561,7 +792,8 @@ app.registerExtension({
             const itemHeight = 47;
             ui.list.style.maxHeight = `${itemHeight * visibleItems}px`;
 
-            renderResults(ui.list, matches, state.active, searchText, updateActiveItem, handleSelect);
+            // For highlighting in details, pass a string that includes filter values
+            renderResults(ui.list, matches, state.active, highlightTextQuery, updateActiveItem, handleSelect);
             updateBigboxContent();
         };
 

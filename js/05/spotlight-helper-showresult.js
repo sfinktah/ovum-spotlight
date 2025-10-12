@@ -24,75 +24,40 @@ export function createShowResult (runtime) {
             div.className = "ovum-spotlight-item" + (idx === activeIdx ? " active" : "");
             div.dataset.index = String(idx);
 
-            // Reconstruct the searchText to map positions correctly
+            // Highlight using offsets derived from nested searchJson if available
             let highlightedTitle = r.item.title;
             let highlightedSub = r.item.itemClass;
-            let highlightedId = r.item.id;
 
-            if (r.positions && r.item.searchText) {
-                // Map positions to parts by locating their actual positions within searchText
-                const full = r.item.searchText;
-                const titleText = r.item.node?.title || r.item.node?.type || r.item.title || '';
-                const typeText = r.item.node?.type || r.item.itemClass || '';
-                const idText = String(r.item.id ?? '');
-
-                // Build query tokens for fallback highlighting when fuzzy positions miss a sub-part
-                const q = (searchText || '').toLowerCase();
-                const qTokens = q.split(/\s+/).filter(Boolean).map(t => t.trim()).filter(t => t.length >= 2).sort((a, b) => b.length - a.length);
-                const findTokenPositions = (text, tokens) => {
-                    const tLower = String(text ?? '').toLowerCase();
-                    for (const tok of tokens) {
-                        const j = tLower.indexOf(tok);
-                        if (j !== -1) {
-                            const arr = [];
-                            for (let p = j; p < j + tok.length; p++) arr.push(p);
-                            return arr;
-                        }
+            if (r.positions && (r.item.searchOffsets || r.item.searchText)) {
+                const positions = r.positions;
+                const offsets = r.item.searchOffsets;
+                if (offsets) {
+                    // Title
+                    const [ts, te] = offsets.title || [0, 0];
+                    const titlePositions = getPositionsInRange(positions, ts, te);
+                    if (titlePositions.length) {
+                        highlightedTitle = highlightText(r.item.title, titlePositions);
                     }
-                    return [];
-                };
-
-                // Title: find where the visible title string appears in searchText
-                const titleStart = titleText ? full.indexOf(titleText) : -1;
-                let titlePositions = [];
-                if (titleStart >= 0) {
-                    titlePositions = getPositionsInRange(r.positions, titleStart, titleStart + titleText.length);
-                }
-                if (!titlePositions.length) {
-                    // Fallback: highlight best token directly in the visible title
-                    titlePositions = findTokenPositions(r.item.title, qTokens);
-                }
-                if (titlePositions.length) {
-                    highlightedTitle = highlightText(r.item.title, titlePositions);
-                }
-
-                // Sub/type: find its occurrence after the title region if possible
-                let typeSearchFrom = (titleStart >= 0) ? (titleStart + titleText.length) : 0;
-                const typeStart = (typeText && full.indexOf) ? full.indexOf(typeText, typeSearchFrom) : -1;
-                let typePositions = [];
-                if (typeStart >= 0) {
-                    typePositions = getPositionsInRange(r.positions, typeStart, typeStart + typeText.length);
-                }
-                if (!typePositions.length && r.item.itemClass) {
-                    typePositions = findTokenPositions(r.item.itemClass, qTokens);
-                }
-                if (typePositions.length && r.item.itemClass) {
-                    highlightedSub = highlightText(r.item.itemClass, typePositions);
-                }
-
-                // ID positions: locate id text in searchText, then reflect inside the title's [id]
-                const idStartInSearch = idText ? full.indexOf(idText) : -1;
-                const titleMatch = r.item.title.match(/\[([^\]]+)\]$/);
-                if (idStartInSearch >= 0 && titleMatch) {
-                    const idInTitle = titleMatch[1];
-                    const idPositionsRel = getPositionsInRange(r.positions, idStartInSearch, idStartInSearch + idText.length);
-                    if (Array.isArray(idPositionsRel) && idPositionsRel.length > 0) {
-                        // Highlight the same character offsets within the id as shown in the title
-                        const highlightedIdText = highlightText(idInTitle, idPositionsRel);
-                        const idOpenIdx = r.item.title.lastIndexOf('[' + idInTitle);
-                        if (idOpenIdx >= 0) {
-                            highlightedTitle = r.item.title.substring(0, idOpenIdx) + '[' + highlightedIdText + ']';
-                        }
+                    // Class
+                    const [cs, ce] = offsets.itemClass || [0, 0];
+                    const classPositions = getPositionsInRange(positions, cs, ce);
+                    if (classPositions.length && r.item.itemClass) {
+                        highlightedSub = highlightText(r.item.itemClass, classPositions);
+                    }
+                } else if (r.item.searchText) {
+                    // Fallback: legacy mapping by indexOf
+                    const full = r.item.searchText;
+                    const typeText = r.item.node?.type || r.item.itemClass || '';
+                    const titleText = r.item.node?.title || r.item.node?.type || r.item.title || '';
+                    const titleStart = titleText ? full.indexOf(titleText) : -1;
+                    if (titleStart >= 0) {
+                        const titlePositions = getPositionsInRange(positions, titleStart, titleStart + titleText.length);
+                        if (titlePositions.length) highlightedTitle = highlightText(r.item.title, titlePositions);
+                    }
+                    const typeStart = (typeText && full.indexOf) ? full.indexOf(typeText) : -1;
+                    if (typeStart >= 0) {
+                        const typePositions = getPositionsInRange(positions, typeStart, typeStart + typeText.length);
+                        if (typePositions.length && r.item.itemClass) highlightedSub = highlightText(r.item.itemClass, typePositions);
                     }
                 }
             }

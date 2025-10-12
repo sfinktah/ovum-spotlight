@@ -11,6 +11,9 @@
 // /** @typedef {import("./spotlight-typedefs.js").KeywordHandler} KeywordHandler */
 // /** @typedef {import("./spotlight-typedefs.js").DefaultHandler} DefaultHandler */
 // /** @typedef {import("./spotlight-typedefs.js").ISpotlightRegistry} ISpotlightRegistry */
+// /** @typedef {import("./spotlight-typedefs.js").IFilterRegistry} IFilterRegistry */
+// /** @typedef {import("./spotlight-typedefs.js").FilterFn} FilterFn */
+// /** @typedef {import("./spotlight-typedefs.js").ParsedFilter} ParsedFilter */
 // /** @typedef {import("./spotlight-typedefs.js").WidgetMatch} WidgetMatch */
 // /** @typedef {import("./spotlight-typedefs.js").HighlightPositions} HighlightPositions */
 
@@ -40,6 +43,9 @@
  * @property {any[]} [itemSubtitlePath] Chain of parent subgraph-holder nodes for UI breadcrumbs
  * @property {string} [itemDetails]
  * @property {string} [searchText]
+ * @property {(string|String[])[]} [searchJson] Nested JSON-like array used for FZF mapping: [title, itemClass, itemSubtitlePath:string[], itemDetails:string[]]
+ * @property {string} [searchFlat] Flat string derived from searchJson used by FZF selector
+ * @property {{ title:[number,number], itemClass:[number,number], subtitles:{text:string,start:number,end:number}[], details:{text:string,start:number,end:number}[] }} [searchOffsets] Character offset map for searchFlat to map fzf positions back to fields
  */
 
 /**
@@ -95,6 +101,31 @@
  * @property {(keyword:string, callback:KeywordHandler)=>void} registerKeywordHandler
  * @property {(callback:DefaultHandler)=>void} registerDefaultHandler
  * @property {(s:string)=>void} [_setPlaceholder]
+ * @property {(nodeType:string, fn: NodeInfoProvider)=>void} [registerNodeInfoProvider]
+ * @property {(args:{ node:any, displayId:string|number, parentChain:any[] }): NodeItem} [makeNodeItem]
+ */
+
+/**
+ * Filter function for items.
+ * @callback FilterFn
+ * @param {SpotlightItem} item
+ * @param {string} value
+ * @returns {boolean|Promise<boolean>}
+ */
+
+/**
+ * Parsed filter key/value pair from the user query.
+ * @typedef {Object} ParsedFilter
+ * @property {string} name
+ * @property {string} value
+ * @property {string} [raw]
+ */
+
+/**
+ * Registry for filters (key:value query pairs) similar to the Spotlight keyword registry.
+ * @typedef {Object} IFilterRegistry
+ * @property {Map<string, FilterFn>} filters
+ * @property {(name:string, callback:FilterFn)=>void} registerFilter
  */
 
 /**
@@ -117,3 +148,18 @@
 
 // Ensure this file is treated as a module by TypeScript/IDEs so types can be imported.
 export {};
+/**
+ * Extra Spotlight info that a node can provide via UI JS.
+ * @typedef {Object} NodeSpotlightInfo
+ * @property {string[]|string} [details] Extra details/tokens to include in search and display (bottom-right area)
+ * @property {string} [itemClass] Override right-hand label
+ * @property {string} [itemClassSuffix] Suffix to append to the right-hand label
+ * @property {string} [titleSuffix] Suffix to append to the title (e.g., state)
+ */
+
+/**
+ * Function signature for node info providers.
+ * @callback NodeInfoProvider
+ * @param {any} node LiteGraph node instance
+ * @returns {NodeSpotlightInfo|void}
+ */
