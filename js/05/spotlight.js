@@ -254,7 +254,8 @@ window.OvumSpotlight.makeNodeItem = makeNodeItem;
 //        window.OvumSpotlight?.registerDefaultHandler(()=>({...}))
 /** @type {ISpotlightRegistry} */
 // @ts-ignore - augmenting window with OvumSpotlight
-window.OvumSpotlight = window.OvumSpotlight || SpotlightRegistry;
+// Merge SpotlightRegistry into any existing OvumSpotlight object to avoid losing previously attached helpers
+window.OvumSpotlight = Object.assign(window.OvumSpotlight || {}, SpotlightRegistry);
 
 // Simple filter registry, similar to keyword registry
 // External modules can register filters by name. If no filter matches, fallback assumes filterName is a widget name.
