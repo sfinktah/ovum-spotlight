@@ -17,7 +17,7 @@ from server import PromptServer
 # Base directory for serving
 MODULE_DIR = Path(__file__).resolve().parent
 WEB_DIR = MODULE_DIR / "web"
-NODE_MODULES_DIR = (MODULE_DIR / "node_modules").resolve()
+NODE_MODULES_DIR = (MODULE_DIR / "web/dist/node_modules").resolve()
 
 # Ensure mimetypes has some common types on Windows
 mimetypes.add_type("text/markdown", ".md")
@@ -49,7 +49,7 @@ def _markdown_to_html(md_text: str) -> str:
 <link rel="stylesheet" href="/ovum-spotlight/web/css/markdown.css">
 </head><body>
 {body}
-</body></html>
+</body></html>G
 """
 
 
@@ -137,10 +137,11 @@ async def ovum_web(request: web.Request):
     return _serve_static_files(tail, WEB_DIR, '/ovum-spotlight/web')
 
 
+# /ovum-spotlight/node_modules/fzf/dist/
 @PromptServer.instance.routes.get('/ovum-spotlight/node_modules/{tail:.*}')
 async def ovum_node_modules(request: web.Request):
     tail = request.match_info.get('tail', '')
-    return _serve_static_files(tail, NODE_MODULES_DIR, '/ovum-spotlight/web/dist/node_modules')
+    return _serve_static_files(tail, NODE_MODULES_DIR, '/ovum-spotlight/node_modules')
 
 
 
