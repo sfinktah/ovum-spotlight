@@ -7,6 +7,12 @@ temperament, and deeply extensible.
 
 ![Ovum Spotlight Interface](resources/spotlight1.png)
 
+
+## tl;dr
+
+The (configurable) hotkeys are `Control`+`Space` or if you are lazy, `/`. Hold down `Shift` while scrolling to have the
+graph scroll with you to the highlighted node, that includes going inside subgraphs!
+
 ## What it does
 
 - Highlights and surfaces values from running nodes and responses in ways designed for immediate, decisive action.
