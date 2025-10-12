@@ -1,0 +1,20 @@
+[project]
+name = "ovum-spotlight"
+description = "Spotlight: An extensible, magical, and essential search bar for ComfyUI"
+version = "1.0.142"
+dependencies = [
+    "aiohttp",
+    "requests",
+]
+
+[project.license]
+file = "MIT"
+
+[project.urls]
+Repository = "https://github.com/sfinktah/ovum-spotlight"
+
+[tool.comfy]
+PublisherId = "sfinktah"
+DisplayName = "ovum-spotlight"
+Icon = "https://avatars.githubusercontent.com/u/4650770"
+includes = []
