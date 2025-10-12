@@ -102,7 +102,8 @@
  * @property {(callback:DefaultHandler)=>void} registerDefaultHandler
  * @property {(s:string)=>void} [_setPlaceholder]
  * @property {(nodeType:string, fn: NodeInfoProvider)=>void} [registerNodeInfoProvider]
- * @property {(args:{ node:any, displayId:string|number, parentChain:any[] }): NodeItem} [makeNodeItem]
+ * @property {(args:MakeNodeItemArgs) => NodeItem} [makeNodeItem]
+ * @property {(name:string, callback:FilterFn)=>void} [registerFilter]
  */
 
 /**
@@ -162,4 +163,12 @@ export {};
  * @callback NodeInfoProvider
  * @param {any} node LiteGraph node instance
  * @returns {NodeSpotlightInfo|void}
+ */
+
+/**
+ * Arguments for makeNodeItem helper.
+ * @typedef {Object} MakeNodeItemArgs
+ * @property {any} node LiteGraph node instance
+ * @property {string|number} displayId Display id for the node (supports subgraph dotted notation)
+ * @property {any[]} parentChain Chain of parent subgraph-holder nodes for UI breadcrumbs
  */
