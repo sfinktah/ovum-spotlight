@@ -765,7 +765,7 @@ app.registerExtension({
             id: "ovum.spotlightAlternateHotkey",
             name: "ovum: Spotlight alternate hotkey",
             type: "text",
-            defaultValue: "Ctrl+Space"
+            defaultValue: "Ctrl+k"
         });
         app.ui.settings.addSetting({
             id: "ovum.spotlightHandlers",
@@ -785,12 +785,12 @@ app.registerExtension({
             type: "number",
             defaultValue: 6
         });
-        app.ui.settings.addSetting({
-            id: "ovum.spotlightBlockSelectors",
-            name: "ovum: Spotlight block selectors (comma-separated)",
-            type: "text",
-            defaultValue: ""
-        });
+        // app.ui.settings.addSetting({
+        //     id: "ovum.spotlightBlockSelectors",
+        //     name: "ovum: Spotlight block selectors (comma-separated)",
+        //     type: "text",
+        //     defaultValue: ""
+        // });
 
         // Store open function for command access
         this._spotlightOpen = open;
@@ -802,10 +802,11 @@ app.registerExtension({
             label: "Activate Spotlight",
             function: () => {
                 // Access the open function through the extension instance
-                if (app.extensions?.extensions?.["ovum.spotlight"]?._spotlightOpen) {
-                    // Respect UI blockers when activating via command as well
+                const ovum_spotlight = (Array.from(app.extensions || []).find(o => o.name === 'ovum.spotlight')) || null;
+                if (ovum_spotlight?._spotlightOpen) {
+                    // Respect UI blockers when activating via command as well 
                     if (!isBlockedByActiveUI()) {
-                        app.extensions.extensions["ovum.spotlight"]._spotlightOpen();
+                        ovum_spotlight?._spotlightOpen();
                     }
                 }
             }

@@ -10,7 +10,7 @@ temperament, and deeply extensible.
 
 ## tl;dr
 
-The (configurable) hotkeys are `Control`+`Space` or if you are lazy, `/`. Hold down `Shift` while scrolling to have the
+The (configurable) hotkeys are `Control`+`K` or if you are lazy, `/`. Hold down `Shift` while scrolling to have the
 graph scroll with you to the highlighted node, that includes going inside subgraphs!
 
 ## What it does

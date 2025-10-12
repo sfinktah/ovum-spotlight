@@ -39,6 +39,7 @@ export function getSpotlightBlockSelectors () {
         // Blur focus for these UI overlays before allowing spotlight to open
         '.ovum-prompt-window-shade',
         '.dialog.buttons',
+        '.p-autocomplete-input-multiple',
         '.ovum-sequencer',
         '.ovum-connections',
         '.ovum-spotlight', // if spotlight itself is open, treat as blocking
