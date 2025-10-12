@@ -633,8 +633,9 @@ app.registerExtension({
             shiftPreviewSavedSelection = null;
         }
 
-        // Handle backspace on input to deactivate handler
+        // Handle input keydown for handler deactivation, navigation, selection, and closing
         ui.input.addEventListener("keydown", (e) => {
+            // Backspace when handler is active and input is empty -> deactivate handler but leave keyword + space
             if (e.key === "Backspace" && state.handlerActive && ui.input.value === "") {
                 e.preventDefault();
                 e.stopPropagation();
@@ -657,6 +658,63 @@ app.registerExtension({
                     ui.input.setSelectionRange(restoredText.length, restoredText.length);
                     refresh();
                 }, 0);
+                return;
+            }
+
+            // Only handle navigation/close/select when spotlight is open
+            if (!state.open) {
+                return;
+            }
+
+            // Track if last non-modifier key was an Arrow key (used for Shift preview activation)
+            const isModifier = (k) => k === "Shift" || k === "Control" || k === "Alt" || k === "Meta";
+            if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                lastKeyWasArrow = true;
+            } else if (!isModifier(e.key)) {
+                lastKeyWasArrow = false;
+            }
+
+            if (e.key === "Escape") {
+                e.preventDefault();
+                e.stopPropagation();
+                close();
+                return;
+            }
+
+            if (e.key === "ArrowDown") {
+                e.preventDefault(); // prevent caret move in the input
+                handleArrowNavigation(+1, e.shiftKey);
+                return;
+            }
+
+            if (e.key === "ArrowUp") {
+                e.preventDefault(); // prevent caret move in the input
+                handleArrowNavigation(-1, e.shiftKey);
+                return;
+            }
+
+            if (e.key === "Enter") {
+                const r = state.results[state.active];
+                if (r) {
+                    e.preventDefault();
+                    handleSelect(r);
+                }
+                return;
+            }
+
+            if (e.key === "Shift") {
+                // Activate preview-focus only if the last real key pressed was an Arrow key
+                if (!state.shiftPreviewActive && lastKeyWasArrow) {
+                    saveShiftPreviewViewport();
+                    saveShiftPreviewGraphContext();
+                    saveShiftPreviewSelection();
+                    state.shiftPreviewActive = true;
+                    const r = state.results?.[state.active];
+                    if (r && r.item) {
+                        previewFocusForItem(r.item);
+                    }
+                }
+                return; // don't interfere with Shift otherwise
             }
         });
 
@@ -684,13 +742,47 @@ app.registerExtension({
                 }
             }
         };
-
+        
         // Keyboard handling for both settings-based hotkeys and internal navigation
+        // Capture-phase listener on document to intercept hotkeys before canvas handlers (e.g., Space panning)
         document.addEventListener("keydown", (e) => {
             const setting = app.ui.settings.getSettingValue("ovum.spotlightHotkey") ?? "/";
             const alternateSetting = app.ui.settings.getSettingValue("ovum.spotlightAlternateHotkey") ?? "Ctrl+Space";
-            const matchesPrimary = e.key === setting && !state.open && !e.ctrlKey && !e.metaKey && !e.altKey;
+            const matchesPrimary = matchesHotkey(e, setting) && !state.open;
             const matchesAlternate = matchesHotkey(e, alternateSetting) && !state.open;
+
+            if ((matchesPrimary || matchesAlternate) && !isBlockedByActiveUI()) {
+                // Prevent default and stop propagation to avoid canvas consuming Space/other combos
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                console.debug("Ovum Spotlight (capture): opening via hotkey", { matched: matchesPrimary ? 'primary' : 'alternate', setting, alternateSetting });
+                open();
+            }
+        }, { capture: true });
+
+        // Bubble-phase listener on canvas for navigation and fallback hotkey handling
+        getCanvasElement().addEventListener("keydown", (e) => {
+            const setting = app.ui.settings.getSettingValue("ovum.spotlightHotkey") ?? "/";
+            const alternateSetting = app.ui.settings.getSettingValue("ovum.spotlightAlternateHotkey") ?? "Ctrl+Space";
+            // Use matchesHotkey for both primary and alternate hotkeys
+            const matchesPrimary = matchesHotkey(e, setting) && !state.open;
+            const matchesAlternate = matchesHotkey(e, alternateSetting) && !state.open;
+
+            // Hardcoded debug for Ctrl+Space not activating
+            if (matchesHotkey(e, "Ctrl+Space")) {
+                // Intentionally log rich details to help diagnose environment-specific behavior
+                console.debug("Ovum Spotlight: Ctrl+Space detected", {
+                    key: e.key,
+                    code: e.code,
+                    ctrl: e.ctrlKey,
+                    alt: e.altKey,
+                    shift: e.shiftKey,
+                    meta: e.metaKey,
+                    repeat: e.repeat,
+                    setting,
+                    alternateSetting
+                });
+            }
 
             // Update lastKeyWasArrow tracking before handling Shift
             const isModifier = (k) => k === "Shift" || k === "Control" || k === "Alt" || k === "Meta";
@@ -703,6 +795,7 @@ app.registerExtension({
             if ((matchesPrimary || matchesAlternate)) {
                 if (!isBlockedByActiveUI()) {
                     e.preventDefault();
+                    console.debug("Ovum Spotlight: opening via hotkey", { matched: matchesPrimary ? 'primary' : 'alternate', setting, alternateSetting });
                     open();
                 }
             } else if (state.open) {
@@ -765,7 +858,7 @@ app.registerExtension({
             id: "ovum.spotlightAlternateHotkey",
             name: "ovum: Spotlight alternate hotkey",
             type: "text",
-            defaultValue: "Ctrl+k"
+            defaultValue: "Ctrl+Space"
         });
         app.ui.settings.addSetting({
             id: "ovum.spotlightHandlers",
