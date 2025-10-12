@@ -22,7 +22,7 @@ export function matchesHotkey (event, hotkeyString) {
 
     const eventKey = event.key.toLowerCase();
     const matchesKey = eventKey === key || (key === 'space' && eventKey === ' ');
-    console.log("matchesHotkey", eventKey, hasCtrl, hasMeta, hasAlt, hasShift);
+    // console.log("matchesHotkey", eventKey, hasCtrl, hasMeta, hasAlt, hasShift);
 
     return matchesKey &&
         (hasCtrl ? event.ctrlKey : !event.ctrlKey) &&
