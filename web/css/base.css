@@ -1,0 +1,93 @@
+/* Base styles with light/dark mode via CSS variables and prefers-color-scheme */
+
+:root {
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #57606a;
+  --link: #0969da;
+  --link-hover: #0349a5;
+  --code-bg: #f6f8fa;
+  --border: #d0d7de;
+
+  --spacing: 2rem;
+  --font-sans: system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --fg: #e6edf3;
+    --muted: #8b949e;
+    --link: #2f81f7;
+    --link-hover: #58a6ff;
+    --code-bg: #161b22;
+    --border: #30363d;
+  }
+}
+
+/* Ensure UA widgets also adapt */
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  margin: var(--spacing);
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: var(--link);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--link-hover);
+  text-decoration: underline;
+}
+
+small,
+.time,
+.muted {
+  color: var(--muted);
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+  background: var(--code-bg);
+}
+code {
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+pre {
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+}
+
+ul {
+  margin-left: 1.2rem;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.5rem 0;
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.75rem;
+}

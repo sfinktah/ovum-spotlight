@@ -11,7 +11,7 @@ from aiohttp import web, ClientSession, ClientTimeout
 logger = logging.getLogger(__name__)
 
 # Spotlight demo and helpers
-SPOTLIGHT_API_BASE = '/ovum/spotlight'
+SPOTLIGHT_API_BASE = '/ovum-spotlight/spotlight'
 
 
 @PromptServer.instance.routes.get(f"{SPOTLIGHT_API_BASE}/google")

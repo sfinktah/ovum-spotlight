@@ -5,7 +5,7 @@ class SpotlightSampleNode:
     A minimal demo node for Spotlight plugin API. Does nothing server-side; exists to showcase
     that custom nodes can also extend the frontend spotlight search.
     """
-    CATEGORY = "ovum/demo"
+    CATEGORY = "ovum-spotlight/demo"
     RETURN_TYPES = (ANYTYPE,)
     RETURN_NAMES = ("any",)
     FUNCTION = "identity"

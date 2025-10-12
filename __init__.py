@@ -40,3 +40,11 @@ for module in [os.path.splitext(f)[0] for f in os.listdir(module_root_directory)
 WEB_DIRECTORY = "./js"
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'WEB_DIRECTORY']
 
+# Ensure web routes in _mini_webserver are registered on package import
+try:
+    from . import _mini_webserver  # noqa: F401
+except Exception:
+    # Do not fail package import if optional server components are unavailable
+    pass
+
+

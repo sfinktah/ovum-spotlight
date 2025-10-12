@@ -1,6 +1,5 @@
 import {app} from "../../../scripts/app.js";
-import {Fzf} from "/ovum/node_modules/fzf/dist/fzf.es.js";
-import {Logger} from "../common/logger.js";
+import {Fzf} from "/ovum-spotlight/node_modules/fzf/dist/fzf.es.js";
 import {buildUI, getPositionsInRange, highlightText, updateActiveState} from "./spotlight-helper-dom.js";
 import {allLinks, allNodes, collectAllNodesRecursive, findWidgetMatch, getGraph, navigateToItemAndFocus} from "./spotlight-helper-graph.js";
 import {isBlockedByActiveUI, matchesHotkey} from "./spotlight-helper-hotkey.js";
