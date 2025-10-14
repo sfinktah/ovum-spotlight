@@ -23,6 +23,7 @@ export function createStyles () {
     .ovum-spotlight-item .item-main { flex: 1; }
     .ovum-spotlight-item .item-title-row { display:flex; align-items:center; gap:8px; }
     .ovum-spotlight-item .item-title-row .item-title-text { display: inline; }
+    .ovum-spotlight-item .item-title-row .item-title-text span.item-node-id { font-size: 12pt; padding-left: 5px; }
     .ovum-spotlight-item .state-badges { display:flex; gap:6px; align-items:center; }
     .ovum-spotlight-item .badge { font-size: 11px; padding: 2px 6px; border-radius: 6px; background: rgba(255,255,255,.08); color:#ddd; text-transform: uppercase; letter-spacing: .4px; }
     .ovum-spotlight-item .badge-bypassed { background: #734b4b; color: #ffd9d9; }

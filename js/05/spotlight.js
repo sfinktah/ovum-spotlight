@@ -210,11 +210,13 @@ window.OvumSpotlight = window.OvumSpotlight || {};
 window.OvumSpotlight.registerNodeInfoProvider = (nodeType, fn) => NodeInfoProviders.register(nodeType, fn);
 
 // Factory for node SpotlightItem with nested search JSON and offsets for highlighting
-function makeNodeItem ({ node, displayId, parentChain }) {
+function makeNodeItem ({ node, displayId, parentChain, payload }) {
     const className = node.comfyClass || node.type;
     const baseTitle = `${node.title || className}`;
     const extra = NodeInfoProviders.get(node);
-    const title = `${baseTitle}${extra.titleSuffix ? ' ' + extra.titleSuffix : ''}  [${displayId}]`;
+    const idTag = `#${displayId}`;
+    // Include #<id> in the visible title so it can be matched and highlighted
+    const title = `${baseTitle}${extra.titleSuffix ? ' ' + extra.titleSuffix : ''} ${idTag}`;
     let itemClass = node.type;
     if (extra.itemClass) itemClass = extra.itemClass;
     else if (extra.itemClassSuffix) itemClass = `${itemClass} ${extra.itemClassSuffix}`;
@@ -224,7 +226,8 @@ function makeNodeItem ({ node, displayId, parentChain }) {
     const extraDetails = Array.isArray(extra.details) ? extra.details : [];
     const allDetails = detailPairs.concat(extraDetails);
 
-    const searchJson = [node.title || node.type || "", itemClass || "", subtitleNames, allDetails];
+    // Use the same display title (including #<id>) as the first element so offsets align for highlighting
+    const searchJson = [title || "", itemClass || "", subtitleNames, allDetails];
     const { flat: searchFlat, offsets: searchOffsets } = buildSearchFromJson(searchJson);
 
     return {
@@ -238,7 +241,8 @@ function makeNodeItem ({ node, displayId, parentChain }) {
         searchText: searchFlat, // keep compatibility with existing selector
         searchJson,
         searchFlat,
-        searchOffsets
+        searchOffsets,
+        payload
     };
 }
 
@@ -782,7 +786,15 @@ app.registerExtension({
 
             const maxMatches = app.ui.settings.getSettingValue("ovum.spotlightMaxMatches") ?? 100;
             const visibleItems = app.ui.settings.getSettingValue("ovum.spotlightVisibleItems") ?? 6;
-            const fzf = new Fzf(filteredItems, {selector: (it) => it.searchText || (it.title + (it.sub ? " " + it.sub : "") + " " + it.id)});
+            const fzf = new Fzf(filteredItems, {selector: (it) => {
+                if (typeof it.searchFlat === 'string') return it.searchFlat;
+                if (Array.isArray(it.searchJson)) {
+                    try { return it.searchJson.flat(Infinity).filter(Boolean).join(" "); } catch (e) {}
+                }
+                if (typeof it.searchText === 'string') return it.searchText; // legacy fallback
+                const right = (it.sub ? " " + it.sub : "");
+                return String(it.title || "") + right + " " + String(it.id ?? "");
+            }});
             const matches = fzf.find(searchTextForFzf).slice(0, maxMatches);
             state.results = matches;
             state.active = 0;

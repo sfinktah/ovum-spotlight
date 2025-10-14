@@ -46,6 +46,7 @@
  * @property {(string|String[])[]} [searchJson] Nested JSON-like array used for FZF mapping: [title, itemClass, itemSubtitlePath:string[], itemDetails:string[]]
  * @property {string} [searchFlat] Flat string derived from searchJson used by FZF selector
  * @property {{ title:[number,number], itemClass:[number,number], subtitles:{text:string,start:number,end:number}[], details:{text:string,start:number,end:number}[] }} [searchOffsets] Character offset map for searchFlat to map fzf positions back to fields
+ * @property {any} [payload] Arbitrary plugin-defined object passed through to custom actions
  */
 
 /**
@@ -55,6 +56,7 @@
  * @property {string} title
  * @property {any} link Underlying link object
  * @property {string} [searchText]
+ * @property {any} [payload] Arbitrary plugin-defined object passed through to custom actions
  */
 
 /**
@@ -64,8 +66,9 @@
  * @property {string} title
  * @property {string} [itemClass] Small label rendered on the right side
  * @property {HTMLElement} [bigbox]
- * @property {() => void} [onSelect]
+ * @property {(item:CommandItem) => void} [onSelect]
  * @property {string} [searchText]
+ * @property {any} [payload] Arbitrary plugin-defined object passed through to custom actions
  */
 
 /** @typedef {(NodeItem|LinkItem|CommandItem)} SpotlightItem */
@@ -171,4 +174,5 @@ export {};
  * @property {any} node LiteGraph node instance
  * @property {string|number} displayId Display id for the node (supports subgraph dotted notation)
  * @property {any[]} parentChain Chain of parent subgraph-holder nodes for UI breadcrumbs
+ * @property {any} [payload] Arbitrary plugin-defined object to attach to the created item
  */
