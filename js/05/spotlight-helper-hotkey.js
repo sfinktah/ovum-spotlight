@@ -44,7 +44,8 @@ export function getSpotlightBlockSelectors () {
         '.ovum-sequencer',
         '.ovum-connections',
         '.ovum-spotlight', // if spotlight itself is open, treat as blocking
-        '.ovum-keyword-dialog'
+        '.ovum-keyword-dialog',
+        '.comfy-modal',
     ];
 }
 

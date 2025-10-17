@@ -134,7 +134,77 @@ export function isNumericLike (t) {
  * @param {string} searchText
  * @returns {WidgetMatch|null}
  */
-export function findWidgetMatch (node, searchText) {
+export function findWidgetMatch (node, searchText, opts = {}) {
+    if (!node || !Array.isArray(node.widgets)) {
+        return null;
+    }
+
+    // If positions and searchJson are provided, map highlight positions onto the flattened searchJson
+    // to find the exact widget token that was matched (e.g., "dense_vace_blocks:2").
+    try {
+        const positionsOpt = Array.isArray(opts?.positions) || (opts?.positions && typeof opts.positions.size === 'number' || typeof opts.positions.values === 'function') ? (Array.isArray(opts.positions) ? opts.positions : Array.from(opts.positions)) : null;
+        const searchJson = opts?.searchJson;
+        if (positionsOpt && positionsOpt.length && Array.isArray(searchJson)) {
+            // Flatten searchJson into a list of strings preserving order
+            let flatList = [];
+            try { flatList = searchJson.flat(Infinity).filter(Boolean).map(String); } catch (_) { flatList = []; }
+            if (flatList.length) {
+                // Walk through flatList, building offsets in a single full string joined by spaces.
+                const widgetEntries = []; // {text,start,end,namePart}
+                let cursor = 0;
+                for (let idx = 0; idx < flatList.length; idx++) {
+                    const s = flatList[idx];
+                    const start = cursor;
+                    const end = start + s.length;
+                    if (typeof s === 'string' && s.includes(':')) {
+                        const namePart = s.split(':')[0];
+                        widgetEntries.push({ text: s, start, end, namePart });
+                    }
+                    cursor = end + 1; // account for joining space
+                }
+                if (widgetEntries.length) {
+                    // Score widgets by how many highlight positions fall within their span
+                    let best = null;
+                    for (const we of widgetEntries) {
+                        let count = 0;
+                        for (const p of positionsOpt) {
+                            if (p >= we.start && p < we.end) count++;
+                        }
+                        if (count > 0) {
+                            if (!best || count > best.count || (count === best.count && we.start < best.entry.start)) {
+                                best = { entry: we, count };
+                            }
+                        }
+                    }
+                    if (best) {
+                        const entry = best.entry;
+                        // Map to actual widget by name if possible
+                        let widgetIndex = -1;
+                        let widgetObj = null;
+                        const lowerName = String(entry.namePart).toLowerCase();
+                        for (let i = 0; i < node.widgets.length; i++) {
+                            const w = node.widgets[i];
+                            if (String(w?.name ?? '').toLowerCase() === lowerName) { widgetIndex = i; widgetObj = w; break; }
+                        }
+                        const name = String(widgetObj?.name ?? entry.namePart ?? 'Widget');
+                        const valueStr = String(widgetObj?.value ?? '');
+                        const snippet = entry.text; // show full pair "name:value"
+                        const matchPositions = positionsOpt.filter(p => p >= entry.start && p < entry.end).map(p => p - entry.start);
+                        // No prefix/suffix since we show the exact pair token
+                        const prefix = "";
+                        const suffix = "";
+                        return { widget: widgetObj ?? null, index: widgetIndex, value: valueStr, name, snippet, matchPositions, prefix, suffix };
+                    }
+                }
+            }
+        }
+    } catch (_) {
+        // fall through to legacy text-based logic
+    }
+
+    if (!searchText) {
+        return null;
+    }
     if (!node || !Array.isArray(node.widgets) || !searchText) {
         return null;
     }

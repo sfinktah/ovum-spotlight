@@ -165,11 +165,12 @@ export function createShowResult (runtime) {
             }
 
             if (r.item.node && r.item.itemDetails && searchText) {
-                const widgetMatch = findWidgetMatch(r.item.node, searchText);
+                const widgetMatch = findWidgetMatch(r.item.node, searchText, { positions: r.positions, searchJson: r.item.searchJson });
                 if (widgetMatch) {
                     const highlightedSnippet = highlightText(widgetMatch.snippet, widgetMatch.matchPositions);
                     const detailsEl = $el("div.item-details");
-                    if (!widgetMatch.prefix) {
+                    const snippetHasName = (widgetMatch.snippet && widgetMatch.name && widgetMatch.snippet.toLowerCase().startsWith((widgetMatch.name + ":").toLowerCase()));
+                    if (!widgetMatch.prefix && !snippetHasName) {
                         detailsEl.appendChild($el("strong", { textContent: `${widgetMatch.name}:` }));
                         detailsEl.appendChild(document.createTextNode(" "));
                     }
