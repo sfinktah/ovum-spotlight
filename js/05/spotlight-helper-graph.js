@@ -188,11 +188,52 @@ export function findWidgetMatch (node, searchText, opts = {}) {
                         }
                         const name = String(widgetObj?.name ?? entry.namePart ?? 'Widget');
                         const valueStr = String(widgetObj?.value ?? '');
-                        const snippet = entry.text; // show full pair "name:value"
-                        const matchPositions = positionsOpt.filter(p => p >= entry.start && p < entry.end).map(p => p - entry.start);
-                        // No prefix/suffix since we show the exact pair token
-                        const prefix = "";
+                        // Compute match positions relative to this entry
+                        const entryMatchPositions = positionsOpt.filter(p => p >= entry.start && p < entry.end).map(p => p - entry.start);
+
+                        // Build snippet with possible in-token truncation: keep "name:" head and slice value before the match
+                        let snippet = entry.text;
+                        let matchPositions = entryMatchPositions.slice();
+                        let prefix = "";
                         const suffix = "";
+                        try {
+                            const colonIdx = entry.text.indexOf(':');
+                            if (colonIdx !== -1 && entryMatchPositions.length) {
+                                const rawAfter = entry.text.slice(colonIdx + 1);
+                                const trimmedAfter = rawAfter.replace(/^\s+/, "");
+                                const afterTrimDelta = rawAfter.length - trimmedAfter.length;
+                                const head = entry.text.slice(0, colonIdx + 1) + " "; // e.g., "text: "
+                                const valueStartInEntry = colonIdx + 1 + afterTrimDelta;
+                                const firstRel = Math.min(...entryMatchPositions);
+                                const CONTEXT = 8; // show a bit of context before the match
+                                const shouldSlice = firstRel - valueStartInEntry > CONTEXT;
+                                if (shouldSlice) {
+                                    const cutAt = Math.max(valueStartInEntry, firstRel - CONTEXT);
+                                    const slicedValue = entry.text.slice(cutAt);
+                                    snippet = head + "… " + slicedValue;
+                                    // Rebase match positions into the new snippet coordinate space
+                                    matchPositions = entryMatchPositions
+                                        .map(mp => (mp - cutAt) + (head.length + 2)) // +2 for "… "
+                                        .filter(pos => pos >= 0 && pos <= snippet.length);
+                                    // No outer prefix since we insert internal ellipsis after the head
+                                    prefix = "";
+                                } else {
+                                    // Keep original entry text; allow outer prefix if there is preceding content in the flattened string
+                                    snippet = entry.text;
+                                    matchPositions = entryMatchPositions;
+                                    prefix = entry.start > 0 ? "… " : "";
+                                }
+                            } else {
+                                // No colon or no match positions; fallback to previous behavior
+                                snippet = entry.text;
+                                matchPositions = entryMatchPositions;
+                                prefix = entry.start > 0 ? "… " : "";
+                            }
+                        } catch (_) {
+                            snippet = entry.text;
+                            matchPositions = entryMatchPositions;
+                            prefix = entry.start > 0 ? "… " : "";
+                        }
                         return { widget: widgetObj ?? null, index: widgetIndex, value: valueStr, name, snippet, matchPositions, prefix, suffix };
                     }
                 }
