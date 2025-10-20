@@ -499,7 +499,7 @@ app.registerExtension({
 
             SpotlightRuntime.lastPointerX = e.clientX;
             SpotlightRuntime.lastPointerY = e.clientY;
-            SpotlightRuntime.lastPointerMoveTime = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+            SpotlightRuntime.lastPointerMoveTime = nowMs();
 
             // Enable CSS hover once the mouse actually moves
             SpotlightRuntime.ignoreHoverUntilMove = false;
@@ -512,6 +512,29 @@ app.registerExtension({
         ui.list.addEventListener("mousemove", updatePointerMoveTime);
         // Track whether the last non-modifier key pressed was an Arrow key
         let lastKeyWasArrow = false;
+        // Helpers to keep code DRY
+        const nowMs = () => (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        const updateLastKeyWasArrow = (e) => {
+            const isModifier = (k) => k === "Shift" || k === "Control" || k === "Alt" || k === "Meta";
+            if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                lastKeyWasArrow = true;
+            } else if (!isModifier(e.key)) {
+                lastKeyWasArrow = false;
+            }
+        };
+        const tryActivateShiftPreview = () => {
+            // Activate preview-focus only if the last real key pressed was an Arrow key
+            if (!state.shiftPreviewActive && lastKeyWasArrow) {
+                saveShiftPreviewViewport();
+                saveShiftPreviewGraphContext();
+                saveShiftPreviewSelection();
+                state.shiftPreviewActive = true;
+                const r = state.results?.[state.active];
+                if (r && r.item) {
+                    previewFocusForItem(r.item);
+                }
+            }
+        };
         let state = {
             open: false,
             active: 0,
@@ -912,12 +935,7 @@ app.registerExtension({
             }
 
             // Track if last non-modifier key was an Arrow key (used for Shift preview activation)
-            const isModifier = (k) => k === "Shift" || k === "Control" || k === "Alt" || k === "Meta";
-            if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                lastKeyWasArrow = true;
-            } else if (!isModifier(e.key)) {
-                lastKeyWasArrow = false;
-            }
+            updateLastKeyWasArrow(e);
 
             if (e.key === "Escape") {
                 e.preventDefault();
@@ -948,17 +966,7 @@ app.registerExtension({
             }
 
             if (e.key === "Shift") {
-                // Activate preview-focus only if the last real key pressed was an Arrow key
-                if (!state.shiftPreviewActive && lastKeyWasArrow) {
-                    saveShiftPreviewViewport();
-                    saveShiftPreviewGraphContext();
-                    saveShiftPreviewSelection();
-                    state.shiftPreviewActive = true;
-                    const r = state.results?.[state.active];
-                    if (r && r.item) {
-                        previewFocusForItem(r.item);
-                    }
-                }
+                tryActivateShiftPreview();
                 return; // don't interfere with Shift otherwise
             }
         });
@@ -966,7 +974,7 @@ app.registerExtension({
         // Helper to unify ArrowUp/ArrowDown navigation logic to avoid duplicate code
         const handleArrowNavigation = (delta, shiftKey) => {
             // Record keyboard navigation timestamp to suppress hover selection briefly
-            SpotlightRuntime.lastKeyboardNavigationTime = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+            SpotlightRuntime.lastKeyboardNavigationTime = nowMs();
             // Disable hover-driven active changes while using keyboard
             ui.wrap.classList.remove('hover-enabled');
 
@@ -1030,12 +1038,7 @@ app.registerExtension({
             }
 
             // Update lastKeyWasArrow tracking before handling Shift
-            const isModifier = (k) => k === "Shift" || k === "Control" || k === "Alt" || k === "Meta";
-            if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                lastKeyWasArrow = true;
-            } else if (!isModifier(e.key)) {
-                lastKeyWasArrow = false;
-            }
+            updateLastKeyWasArrow(e)
 
             if ((matchesPrimary || matchesAlternate)) {
                 if (!isBlockedByActiveUI()) {
@@ -1045,17 +1048,7 @@ app.registerExtension({
                 }
             } else if (state.open) {
                 if (e.key === "Shift") {
-                    // Only activate preview-focus if the last real key pressed was an Arrow key
-                    if (!state.shiftPreviewActive && lastKeyWasArrow) {
-                        saveShiftPreviewViewport();
-                        saveShiftPreviewGraphContext();
-                        saveShiftPreviewSelection();
-                        state.shiftPreviewActive = true;
-                        const r = state.results?.[state.active];
-                        if (r && r.item) {
-                            previewFocusForItem(r.item);
-                        }
-                    }
+                    tryActivateShiftPreview();
                 } else if (e.key === "Escape") {
                     close();
                 } else if (e.key === "ArrowDown") {
@@ -1097,7 +1090,7 @@ app.registerExtension({
             id: "ovum.spotlightHotkey",
             name: "ovum: Spotlight hotkey",
             type: "text",
-            defaultValue: "/"
+            defaultValue: "Ctrl+k"
         });
         app.ui.settings.addSetting({
             id: "ovum.spotlightAlternateHotkey",
@@ -1147,6 +1140,13 @@ app.registerExtension({
                     }
                 }
             }
+        },
+    ],
+    // Associate keybindings with commands
+    keybindings: [
+        {
+            commandId: "ovum.spotlight.activate",
+            combo: { key: "/" },
         }
     ]
 });
