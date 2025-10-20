@@ -1136,7 +1136,6 @@ app.registerExtension({
     commands: [
         {
             id: "ovum.spotlight.activate",
-            icon: "pi pi-search",
             label: "Activate Spotlight",
             function: () => {
                 // Access the open function through the extension instance
