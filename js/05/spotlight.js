@@ -512,6 +512,9 @@ app.registerExtension({
         ui.list.addEventListener("mousemove", updatePointerMoveTime);
         // Track whether the last non-modifier key pressed was an Arrow key
         let lastKeyWasArrow = false;
+        // Track if Shift was pressed and released without any other key in between
+        let shiftIsDown = false;
+        let shiftSoloCandidate = false;
         // Helpers to keep code DRY
         const nowMs = () => (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
         const updateLastKeyWasArrow = (e) => {
@@ -937,6 +940,11 @@ app.registerExtension({
             // Track if last non-modifier key was an Arrow key (used for Shift preview activation)
             updateLastKeyWasArrow(e);
 
+            // If Shift is currently down and another key is pressed, cancel solo-Shift candidate
+            if (shiftIsDown && e.key !== "Shift") {
+                shiftSoloCandidate = false;
+            }
+
             if (e.key === "Escape") {
                 e.preventDefault();
                 e.stopPropagation();
@@ -966,6 +974,9 @@ app.registerExtension({
             }
 
             if (e.key === "Shift") {
+                // Start tracking a solo-Shift cycle only if lastKeyWasArrow is currently false
+                shiftIsDown = true;
+                shiftSoloCandidate = !lastKeyWasArrow;
                 tryActivateShiftPreview();
                 return; // don't interfere with Shift otherwise
             }
@@ -1040,6 +1051,11 @@ app.registerExtension({
             // Update lastKeyWasArrow tracking before handling Shift
             updateLastKeyWasArrow(e)
 
+            // If Shift is currently down and another key is pressed, cancel solo-Shift candidate
+            if (shiftIsDown && e.key !== "Shift") {
+                shiftSoloCandidate = false;
+            }
+
             if ((matchesPrimary || matchesAlternate)) {
                 if (!isBlockedByActiveUI()) {
                     e.preventDefault();
@@ -1048,6 +1064,9 @@ app.registerExtension({
                 }
             } else if (state.open) {
                 if (e.key === "Shift") {
+                    // Start tracking a solo-Shift cycle only if lastKeyWasArrow is currently false
+                    shiftIsDown = true;
+                    shiftSoloCandidate = !lastKeyWasArrow;
                     tryActivateShiftPreview();
                 } else if (e.key === "Escape") {
                     close();
@@ -1077,6 +1096,13 @@ app.registerExtension({
                     restoreShiftPreviewViewport();
                     state.shiftPreviewActive = false;
                 }
+                // If Shift was pressed and released with no other key, and lastKeyWasArrow was false, set it to true
+                if (shiftIsDown && shiftSoloCandidate && !lastKeyWasArrow) {
+                    lastKeyWasArrow = true;
+                }
+                // Reset Shift tracking flags on release
+                shiftIsDown = false;
+                shiftSoloCandidate = false;
             }
         });
         ui.input.addEventListener("input", refresh);
