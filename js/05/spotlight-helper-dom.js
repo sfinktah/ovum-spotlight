@@ -35,9 +35,16 @@ export function createStyles () {
     .ovum-spotlight-item .item-subtitle-item { background: rgba(255,255,255,.08); padding: 2px 8px; border-radius: 4px; }
     .ovum-spotlight-item.active { background: #2f7574; }
     .ovum-spotlight-highlight { color: #4fd1c5; font-weight: 600; }
-    .ovum-spotlight-bigbox { border-top: 1px solid rgba(255,255,255,.08); max-height: 60vh; overflow: auto; width: 100%; box-sizing: border-box; padding: 10px 18px 18px; border-radius: 0 0 14px 14px; }
+    .ovum-spotlight-bigbox { border-top: 1px solid rgba(255,255,255,.08); max-height: 60vh; overflow: auto; width: 100%; box-sizing: border-box; padding: 10px 18px 6px; border-radius: 0 0 14px 14px; }
     .ovum-spotlight-bigbox.hidden { display:none; }
     .ovum-spotlight-bigbox, .ovum-spotlight-bigbox * { max-width: 100%; }
+    .ovum-spotlight-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 8px 12px 12px; }
+    .ovum-spotlight-palette { display: flex; align-items: center; gap: 6px; }
+    .ovum-spotlight-palette.hidden { display: none; }
+    .ovum-spotlight-btn { background: #3b3b3b; color: #e6e6e6; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+    .ovum-spotlight-btn.primary { background: #2f7574; color: white; }
+    .ovum-spotlight-btn.primary.outline { background: none; border-color: rgba(255, 255, 255, 0.2); color: var(--p-text-muted-color);
+    .ovum-spotlight-selectbox { width: 18px; height: 18px; }
     `;
     document.head.appendChild(style);
 }
@@ -61,13 +68,22 @@ export function buildUI () {
     list.className = "ovum-spotlight-list";
     const bigbox = document.createElement("div");
     bigbox.className = "ovum-spotlight-bigbox hidden";
+    const footer = document.createElement("div");
+    footer.className = "ovum-spotlight-footer";
+    const palettePrimary = document.createElement("div");
+    palettePrimary.className = "ovum-spotlight-palette ovum-spotlight-palette-primary";
+    const paletteSelection = document.createElement("div");
+    paletteSelection.className = "ovum-spotlight-palette ovum-spotlight-palette-selection hidden";
+    footer.appendChild(paletteSelection);
+    footer.appendChild(palettePrimary);
     header.appendChild(badge);
     header.appendChild(input);
     wrap.appendChild(header);
     wrap.appendChild(list);
     wrap.appendChild(bigbox);
+    wrap.appendChild(footer);
     document.body.appendChild(wrap);
-    return {wrap, input, list, badge, bigbox};
+    return {wrap, input, list, badge, bigbox, footer, palettePrimary, paletteSelection};
 }
 
 /** Return positions within [start,end) covered by fzf positions array

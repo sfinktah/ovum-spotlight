@@ -24,6 +24,9 @@
  * @property {HTMLDivElement} list
  * @property {HTMLDivElement} badge
  * @property {HTMLDivElement} bigbox
+ * @property {HTMLDivElement} [footer]
+ * @property {HTMLDivElement} [palettePrimary]
+ * @property {HTMLDivElement} [paletteSelection]
  */
 
 /**
@@ -151,7 +154,42 @@
  */
 
 // Ensure this file is treated as a module by TypeScript/IDEs so types can be imported.
+/**
+ * Command button shown in the Spotlight footer palettes.
+ * External modules can register commands that will appear when selection is active.
+ * @typedef {Object} SpotlightCommand
+ * @property {string} id Unique id
+ * @property {string} label Button label
+ * @property {boolean} [primary] If true, show in the primary palette (always visible); otherwise in selection palette when items selected
+ * @property {(ctx:SpotlightCommandContext)=>void|Promise<void>} run Handler called when command is clicked
+ * @property {(items:SpotlightItem[])=>boolean} [isApplicable] Optional filter, when provided the command only shows if it returns true for current selection
+ */
+
+/**
+ * Context object provided to command handlers.
+ * @typedef {Object} SpotlightCommandContext
+ * @property {SpotlightItem[]} selected Selected items (usually nodes/links)
+ * @property {SpotlightHandlerContext['app']} app ComfyUI app
+ * @property {SpotlightHandlerContext['getGraph']} getGraph Get current graph
+ * @property {()=>void} close Close Spotlight
+ */
+
+/**
+ * Registry for footer palette commands.
+ * @typedef {Object} ISpotlightCommandRegistry
+ * @property {(cmd:SpotlightCommand)=>void} registerPaletteCommand Register a new command
+ * @property {()=>void} clearPaletteCommands Remove all previously registered commands
+ */
+
 export {};
+/**
+ * Extra Spotlight info that a node can provide via UI JS.
+ * @typedef {Object} NodeSpotlightInfo
+ * @property {string[]|string} [details] Extra details/tokens to include in search and display (bottom-right area)
+ * @property {string} [itemClass] Override right-hand label
+ * @property {string} [itemClassSuffix] Suffix to append to the right-hand label
+ * @property {string} [titleSuffix] Suffix to append to the title (e.g., state)
+ */
 /**
  * Extra Spotlight info that a node can provide via UI JS.
  * @typedef {Object} NodeSpotlightInfo

@@ -54,7 +54,11 @@ const SpotlightRuntime = {
     lastPointerX: 0,
     lastPointerY: 0,
     HOVER_SUPPRESSION_WINDOW_MS: 250,
-    MINIMUM_POINTER_DISTANCE: 5 // pixels
+    MINIMUM_POINTER_DISTANCE: 5, // pixels
+    // Selection integration (wired by spotlight.js at runtime)
+    selectMode: false,
+    isSelected: /** @type {(item:any)=>boolean} */ (() => false),
+    toggleSelect: /** @type {(item:any)=>void} */ (() => {})
 };
 
 // Track viewport to restore after spotlight closes
@@ -486,6 +490,169 @@ app.registerExtension({
         SpotlightRegistry._setPlaceholder = (s) => {
             ui.input.placeholder = s || defaultPlaceholder;
         };
+
+        // Command palette registry and selection state
+        /** @type {{primary: any[], selection: any[], registerPaletteCommand:(cmd:any)=>void, clearPaletteCommands:()=>void}} */
+        const CommandRegistry = {
+            primary: [],
+            selection: [],
+            registerPaletteCommand (cmd) {
+                if (!cmd || typeof cmd.label !== 'string' || typeof cmd.run !== 'function') return;
+                if (cmd.primary) this.primary.push(cmd); else this.selection.push(cmd);
+                renderPalettes();
+            },
+            clearPaletteCommands () {
+                this.primary = [];
+                this.selection = [];
+                renderPalettes();
+            }
+        };
+        // Expose API globally
+        // @ts-ignore
+        window.OvumSpotlight = window.OvumSpotlight || {};
+        /** @type {import('./spotlight-typedefs.js').ISpotlightCommandRegistry} */
+        // @ts-ignore
+        window.OvumSpotlight.registerPaletteCommand = (cmd) => CommandRegistry.registerPaletteCommand(cmd);
+        // @ts-ignore
+        window.OvumSpotlight.clearPaletteCommands = () => CommandRegistry.clearPaletteCommands();
+
+        // Selection state
+        const selectedMap = new Map();
+        const itemKey = (it) => {
+            const t = it?.["@type"] ?? it?.type;
+            if (t === 'node' && it?.node?.id != null) return `node:${it.node.id}`;
+            if (t === 'link' && it?.id != null) return `link:${it.id}`;
+            return `item:${it?.id ?? Math.random()}`;
+        };
+        const isSelected = (it) => selectedMap.has(itemKey(it));
+        const clearSelection = () => { selectedMap.clear(); renderPalettes(); rerenderList(); };
+        const toggleSelect = (it) => {
+            const k = itemKey(it);
+            if (selectedMap.has(k)) selectedMap.delete(k); else selectedMap.set(k, it);
+            renderPalettes();
+            rerenderList();
+        };
+        SpotlightRuntime.isSelected = isSelected;
+        SpotlightRuntime.toggleSelect = toggleSelect;
+
+        // UI: render palettes
+        let selectMode = false;
+        SpotlightRuntime.selectMode = selectMode;
+        const makeBtn = (label, opts) => {
+            const b = document.createElement('button');
+            b.className = 'ovum-spotlight-btn' + (opts?.primary ? ' primary' : '') + (opts?.outline ? ' outline' : '');
+            b.textContent = label;
+            if (opts?.onclick) {
+                b.addEventListener('click', opts.onclick);
+            }
+            return b;
+        };
+        const renderPalettes = () => {
+            if (!ui.palettePrimary || !ui.paletteSelection) return;
+            ui.palettePrimary.innerHTML = '';
+            ui.paletteSelection.innerHTML = '';
+            // Primary palette: Select Mode toggle and any primary commands
+            const toggleBtn = makeBtn('Select Mode', {
+                primary: true, outline: !selectMode, onclick: () => {
+                    selectMode = !selectMode;
+                    SpotlightRuntime.selectMode = selectMode;
+                    if (!selectMode) {
+                        clearSelection();
+                    }
+                    renderPalettes();
+                    rerenderList();
+                }
+            });
+            ui.palettePrimary.appendChild(toggleBtn);
+            // External primary commands
+            CommandRegistry.primary.forEach(cmd => {
+                const btn = makeBtn(cmd.label, { onclick: () => {
+                    try { cmd.run({ selected: Array.from(selectedMap.values()), app, getGraph, close }); } catch (e) { console.warn('OvumSpotlight command error', e); }
+                }});
+                ui.palettePrimary.appendChild(btn);
+            });
+            // Selection palette: only show if there are selected items
+            const sel = Array.from(selectedMap.values());
+            if (sel.length > 0) {
+                ui.paletteSelection.classList.remove('hidden');
+                // Show externally registered selection commands that are applicable
+                CommandRegistry.selection.forEach(cmd => {
+                    if (typeof cmd.isApplicable === 'function' && !cmd.isApplicable(sel)) return;
+                    const btn = makeBtn(cmd.label, { onclick: () => {
+                        try { cmd.run({ selected: sel, app, getGraph, close }); } catch (e) { console.warn('OvumSpotlight command error', e); }
+                    }});
+                    ui.paletteSelection.appendChild(btn);
+                });
+            } else {
+                ui.paletteSelection.classList.add('hidden');
+            }
+        };
+
+        // Register built-in selection commands so the palette shows default actions when items are selected
+        try {
+            const builtinLabels = ['remove', 'replace', 'bypass', 'color', 'align'];
+            builtinLabels.forEach((label) => {
+                CommandRegistry.registerPaletteCommand({
+                    id: `builtin:${label}`,
+                    label,
+                    run: (ctx) => {
+                        try {
+                            // Allow external plugins to supply handlers for built-in commands via window.OvumSpotlight.__builtinHandlers
+                            // @ts-ignore
+                            const h = (window.OvumSpotlight && window.OvumSpotlight.__builtinHandlers && window.OvumSpotlight.__builtinHandlers[label]);
+                            if (typeof h === 'function') {
+                                return h(ctx);
+                            }
+                        } catch (e) {
+                            console.warn('OvumSpotlight builtin command handler error', e);
+                        }
+                        // Fallback placeholder implementation
+                        console.log('[OvumSpotlight]', label, 'on selection:', ctx?.selected);
+                    }
+                });
+            });
+        } catch (e) {
+            console.warn('OvumSpotlight: failed to register built-in commands', e);
+        }
+
+        // Augment current FZF matches with any selected items (pin them) when select mode is active
+        const augmentMatchesWithSelection = (baseMatches) => {
+            try {
+                if (!SpotlightRuntime.selectMode) return baseMatches;
+                const out = Array.isArray(baseMatches) ? baseMatches.slice() : [];
+                // Build a set of existing keys to avoid duplicates
+                const have = new Set();
+                for (const r of out) {
+                    const it = r && r.item;
+                    if (it) have.add(itemKey(it));
+                }
+                // Append any selected items that are not already present
+                selectedMap.forEach((selItem) => {
+                    const k = itemKey(selItem);
+                    if (!have.has(k)) {
+                        out.push({ item: selItem, score: 0, positions: [] });
+                        have.add(k);
+                    }
+                });
+                return out;
+            } catch (e) {
+                console.warn('OvumSpotlight: augmentMatchesWithSelection failed', e);
+                return baseMatches;
+            }
+        };
+
+        const rerenderList = () => {
+            // Re-render current matches to update checkboxes and active highlight
+            const fzf = currentFzf; // closure var defined later
+            const base = fzf ? fzf.find(state.searchTextForFzf ?? '') : state.results;
+            const matches = augmentMatchesWithSelection(base);
+            // Clamp active index if necessary
+            if (state.active >= matches.length) {
+                state.active = Math.max(0, matches.length - 1);
+            }
+            state.results = matches;
+            renderResults(ui.list, matches, state.active, state.highlightTextQuery || '', updateActiveItem, handleSelect);
+        };
         // Track actual pointer movement to avoid hover overriding keyboard selection when mouse is stationary
         const updatePointerMoveTime = (e) => {
             const deltaX = Math.abs(e.clientX - SpotlightRuntime.lastPointerX);
@@ -546,6 +713,8 @@ app.registerExtension({
             handler: "",
             handlerActive: false,
             fullQuery: "",
+            searchTextForFzf: "",
+            highlightTextQuery: "",
             preventHandlerActivation: false,
             reactivateAwaitingSpaceToggle: false,
             reactivateSpaceRemoved: false,
@@ -752,6 +921,8 @@ app.registerExtension({
         };
 
         let _searchSeq = 0;
+        /** @type {import('/ovum-spotlight/js/05/spotlight-typedefs.js').SpotlightItem[]|null} */
+        let currentFzf = null;
         const refresh = async () => {
             _searchSeq++;
             const seq = _searchSeq;
@@ -806,6 +977,8 @@ app.registerExtension({
             const filterParse = parseFilters(parseResult.text);
             const searchTextForFzf = filterParse.text;
             const highlightTextQuery = [filterParse.text, ...filterParse.filters.map(f => f.value)].filter(Boolean).join(" ");
+            state.searchTextForFzf = searchTextForFzf;
+            state.highlightTextQuery = highlightTextQuery;
 
             const filteredItems = await applyFilters(items, filterParse.filters);
             state.items = filteredItems;
@@ -821,7 +994,9 @@ app.registerExtension({
                 const right = (it.sub ? " " + it.sub : "");
                 return String(it.title || "") + right + " " + String(it.id ?? "");
             }});
-            const matches = fzf.find(searchTextForFzf).slice(0, maxMatches);
+            currentFzf = fzf;
+            const baseMatches = fzf.find(searchTextForFzf).slice(0, maxMatches);
+            const matches = augmentMatchesWithSelection(baseMatches);
             state.results = matches;
             state.active = 0;
             if (window.Logger?.log) { Logger.log({ class: 'ovum.spotlight', method: 'refresh', severity: 'trace', tag: 'fzf', nodeName: 'ovum.timer' }, 'fzf matches', matches.slice(0, visibleItems)); }
@@ -1108,7 +1283,7 @@ app.registerExtension({
         ui.input.addEventListener("input", refresh);
         ui.input.addEventListener("blur", () => setTimeout(() => {
             if (state.open) {
-                close();
+                // close();
             }
         }, 150));
 

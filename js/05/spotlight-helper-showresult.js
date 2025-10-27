@@ -80,6 +80,14 @@ export function createShowResult (runtime) {
                 onmousedown: (e) => {
                     if (e.button !== runtime.LEFT_MOUSE_BUTTON) return;
                     e.preventDefault();
+                    if (runtime && runtime.selectMode && typeof runtime.toggleSelect === 'function') {
+                        // Only allow selection for node/link items; commands are not selectable
+                        const t = r.item?.["@type"] ?? r.item?.type;
+                        if (t === 'node' || t === 'link') {
+                            runtime.toggleSelect(r.item);
+                            return;
+                        }
+                    }
                     if (onSelect) onSelect(r);
                 }
             });
@@ -143,6 +151,23 @@ export function createShowResult (runtime) {
                 return badges;
             })();
             const titleRow = $el("div.item-title-row", {}, badgeEl ? [titleSpan, badgeEl] : [titleSpan]);
+
+            // Optional selection checkbox at the far left when select mode is enabled
+            let checkboxEl = null;
+            const itemType = r.item?.["@type"] ?? r.item?.type;
+            const selectable = (itemType === 'node' || itemType === 'link');
+            if (runtime && runtime.selectMode && selectable) {
+                const checked = typeof runtime.isSelected === 'function' ? !!runtime.isSelected(r.item) : false;
+                checkboxEl = $el('input.ovum-spotlight-selectbox', {
+                    type: 'checkbox',
+                    checked,
+                    onclick: (e) => {
+                        e.stopPropagation();
+                        if (typeof runtime.toggleSelect === 'function') runtime.toggleSelect(r.item);
+                    }
+                });
+                div.insertBefore(checkboxEl, div.firstChild);
+            }
 
             // Parent chain subtitle
             let subtitle = null;
