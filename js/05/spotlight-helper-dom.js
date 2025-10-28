@@ -8,45 +8,12 @@ export function createStyles () {
     if (document.getElementById("ovum-spotlight-style")) {
         return;
     }
-    const style = document.createElement("style");
-    style.id = "ovum-spotlight-style";
-    style.textContent = `
-    .ovum-spotlight { position: fixed; left: 50%; top: 12%; transform: translateX(-50%); width: min(800px, 90vw); border-radius: 14px; background: #2b2b2b; box-shadow: 0 20px 60px rgba(0,0,0,.7); z-index: 10000; color: #eee; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-    .ovum-spotlight.hidden { display:none; }
-    .ovum-spotlight-header { display: flex; align-items: center; gap: 10px; background: #1f1f1f; border-radius: 14px 14px 0 0; padding: 18px 22px; }
-    .ovum-spotlight-badge { background:#3b3b3b; color:#bbb; padding:4px 10px; border-radius:10px; font-size:12px; pointer-events:none; white-space: nowrap; }
-    .ovum-spotlight-badge.hidden { display: none; }
-    .ovum-spotlight-input { flex: 1; box-sizing: border-box; background: transparent; border: none; padding: 0; font-size: 28px; color: #fff; outline: none; }
-    .ovum-spotlight-list { overflow:auto; padding: 10px 0; }
-    .ovum-spotlight-item { display:flex; gap:10px; align-items:center; padding: 12px 18px; font-size: 20px; border-top: 1px solid rgba(255,255,255,.04); cursor: pointer; transition: background 0.15s ease; }
-    .ovum-spotlight.hover-enabled .ovum-spotlight-item:hover { background: #2f7574; }
-    .ovum-spotlight-item .item-main { flex: 1; }
-    .ovum-spotlight-item .item-title-row { display:flex; align-items:center; gap:8px; }
-    .ovum-spotlight-item .item-title-row .item-title-text { display: inline; }
-    .ovum-spotlight-item .item-title-row .item-title-text span.item-node-id { font-size: 12pt; padding-left: 5px; }
-    .ovum-spotlight-item .state-badges { display:flex; gap:6px; align-items:center; }
-    .ovum-spotlight-item .badge { font-size: 11px; padding: 2px 6px; border-radius: 6px; background: rgba(255,255,255,.08); color:#ddd; text-transform: uppercase; letter-spacing: .4px; }
-    .ovum-spotlight-item .badge-bypassed { background: #734b4b; color: #ffd9d9; }
-    .ovum-spotlight-item .badge-muted { background: #6b6b6b; color: #e6e6e6; }
-    .ovum-spotlight-item .item-meta { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
-    .ovum-spotlight-item .item-class { opacity:.6; font-size: 14px; }
-    .ovum-spotlight-item .item-details { opacity:.7; font-size: 12px; font-family: Inconsolata, monospace; background: rgba(255,255,255,.05); padding: 2px 8px; border-radius: 4px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ovum-spotlight-item .item-subtitle { display: flex; gap: 6px; align-items: center; font-size: 12px; opacity: .5; margin-top: 4px; flex-wrap: wrap; }
-    .ovum-spotlight-item .item-subtitle-item { background: rgba(255,255,255,.08); padding: 2px 8px; border-radius: 4px; }
-    .ovum-spotlight-item.active { background: #2f7574; }
-    .ovum-spotlight-highlight { color: #4fd1c5; font-weight: 600; }
-    .ovum-spotlight-bigbox { border-top: 1px solid rgba(255,255,255,.08); max-height: 60vh; overflow: auto; width: 100%; box-sizing: border-box; padding: 10px 18px 6px; border-radius: 0 0 14px 14px; }
-    .ovum-spotlight-bigbox.hidden { display:none; }
-    .ovum-spotlight-bigbox, .ovum-spotlight-bigbox * { max-width: 100%; }
-    .ovum-spotlight-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 8px 12px 12px; }
-    .ovum-spotlight-palette { display: flex; align-items: center; gap: 6px; }
-    .ovum-spotlight-palette.hidden { display: none; }
-    .ovum-spotlight-btn { background: #3b3b3b; color: #e6e6e6; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
-    .ovum-spotlight-btn.primary { background: #2f7574; color: white; }
-    .ovum-spotlight-btn.primary.outline { background: none; border-color: rgba(255, 255, 255, 0.2); color: var(--p-text-muted-color);
-    .ovum-spotlight-selectbox { width: 18px; height: 18px; }
-    `;
-    document.head.appendChild(style);
+    const link = document.createElement("link");
+    link.id = "ovum-spotlight-style";
+    link.rel = "stylesheet";
+    // The CSS is built to this path by `npm run build:css` (vite --mode css)
+    link.href = "/ovum-spotlight/web/css/tailwind.css";
+    document.head.appendChild(link);
 }
 
 /**
@@ -74,6 +41,8 @@ export function buildUI () {
     palettePrimary.className = "ovum-spotlight-palette ovum-spotlight-palette-primary";
     const paletteSelection = document.createElement("div");
     paletteSelection.className = "ovum-spotlight-palette ovum-spotlight-palette-selection hidden";
+    const paletteInteractive = document.createElement("div");
+    paletteInteractive.className = "ovum-spotlight-palette ovum-spotlight-palette-interactive hidden";
     footer.appendChild(paletteSelection);
     footer.appendChild(palettePrimary);
     header.appendChild(badge);
@@ -82,8 +51,9 @@ export function buildUI () {
     wrap.appendChild(list);
     wrap.appendChild(bigbox);
     wrap.appendChild(footer);
+    wrap.appendChild(paletteInteractive);
     document.body.appendChild(wrap);
-    return {wrap, input, list, badge, bigbox, footer, palettePrimary, paletteSelection};
+    return {wrap, input, list, badge, bigbox, footer, palettePrimary, paletteSelection, paletteInteractive};
 }
 
 /** Return positions within [start,end) covered by fzf positions array

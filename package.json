@@ -1,0 +1,53 @@
+{
+  "name": "ovum-spotlight",
+  "version": "1.0.0",
+  "private": false,
+  "description": "comfyui node",
+  "keywords": [
+    "a comfy ovum"
+  ],
+  "homepage": "https://github.com/sfinktah/ovum-spotlight#readme",
+  "bugs": {
+    "url": "https://github.com/sfinktah/ovum-spotlight/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sfinktah/ovum-spotlight.git"
+  },
+  "license": "MIT",
+  "author": "me",
+  "type": "module",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "copy:modules": "vite build",
+    "build:css": "vite build --mode css"
+  },
+  "devDependencies": {
+    "@comfyorg/comfyui-frontend-types": "^1.28.8",
+    "@comfyorg/litegraph": "^0.8.100",
+    "@rollup/plugin-commonjs": "^28.0.1",
+    "@rollup/plugin-node-resolve": "^15.3.0",
+    "@rollup/plugin-alias": "^5.1.1",
+    "@tailwindcss/vite": "^4.1.16",
+    "braces": "^3.0.3",
+    "daisyui": "^5.3.10",
+    "fzf": "^0.5.2",
+    "install": "^0.13.0",
+    "npm": "^11.6.2",
+    "rollup": "^4.24.0",
+    "tailwindcss": "^4.1.16",
+    "vite": "^7.1.12"
+  },
+  "tailwind": {
+    "content": [
+      "./js/**/*.js",
+      "./web/**/*.html"
+    ]
+  },
+  "dependencies": {
+  }
+}

@@ -2,6 +2,7 @@
 
 import {app} from "../../../scripts/app.js";
 import {Fzf} from "/ovum-spotlight/node_modules/fzf/dist/fzf.es.js";
+import {braces} from "../01/braces-compat.js"
 import {buildUI, getPositionsInRange, highlightText, updateActiveState} from "./spotlight-helper-dom.js";
 import {allLinks, allNodes, collectAllNodesRecursive, findWidgetMatch, getGraph, navigateToItemAndFocus} from "./spotlight-helper-graph.js";
 import {isBlockedByActiveUI, matchesHotkey} from "./spotlight-helper-hotkey.js";
@@ -535,39 +536,180 @@ app.registerExtension({
         SpotlightRuntime.isSelected = isSelected;
         SpotlightRuntime.toggleSelect = toggleSelect;
 
+        // After a command runs, prune selection/results for items that no longer exist in the graph
+        const pruneSelectionAndResults = () => {
+            try {
+                const g = getGraph();
+                if (!g) return;
+                let changed = false;
+                // prune selection map
+                selectedMap.forEach((it, k) => {
+                    try {
+                        const t = it?.["@type"] ?? it?.type;
+                        let exists = true;
+                        if (t === 'node') {
+                            const id = it?.node?.id;
+                            exists = (id != null) && !!g.getNodeById?.(id);
+                        } else if (t === 'link') {
+                            const id = (it?.id != null) ? it.id : (it?.link?.id);
+                            exists = (id != null) && !!g.links?.[id];
+                        }
+                        if (!exists) { selectedMap.delete(k); changed = true; }
+                    } catch (_) { /* ignore */ }
+                });
+                if (changed) {
+                    renderPalettes();
+                }
+                // prune current results list
+                if (Array.isArray(state.results) && state.results.length) {
+                    const before = state.results.length;
+                    state.results = state.results.filter(r => {
+                        const it = r && r.item;
+                        if (!it) return false;
+                        try {
+                            const t = it?.["@type"] ?? it?.type;
+                            if (t === 'node') {
+                                const id = it?.node?.id;
+                                return (id != null) && !!g.getNodeById?.(id);
+                            } else if (t === 'link') {
+                                const id = (it?.id != null) ? it.id : (it?.link?.id);
+                                return (id != null) && !!g.links?.[id];
+                            }
+                        } catch (_) { /* ignore */ }
+                        return true;
+                    });
+                    if (state.results.length !== before) {
+                        if (state.active >= state.results.length) state.active = Math.max(0, state.results.length - 1);
+                        renderResults(ui.list, state.results, state.active, state.highlightTextQuery || '', updateActiveItem, handleSelect);
+                    } else if (changed) {
+                        rerenderList();
+                    }
+                } else if (changed) {
+                    rerenderList();
+                }
+            } catch (e) {
+                console.warn('OvumSpotlight: pruneSelectionAndResults failed', e);
+            }
+        };
+        const schedulePostCommandCleanup = () => {
+            // run immediately and once more shortly after to give graph time to update
+            setTimeout(() => {
+                pruneSelectionAndResults();
+                setTimeout(pruneSelectionAndResults, 100);
+            }, 0);
+        };
+
         // UI: render palettes
         let selectMode = false;
         SpotlightRuntime.selectMode = selectMode;
         const makeBtn = (label, opts) => {
             const b = document.createElement('button');
-            b.className = 'ovum-spotlight-btn' + (opts?.primary ? ' primary' : '') + (opts?.outline ? ' outline' : '');
+            b.className = 'no-ovum-spotlight-btn btn btn-xs';
+            for (const [key, value] of Object.entries(opts)) {
+                if (value === true) {
+                    b.className += ` ${key}`;
+                }
+            }
             b.textContent = label;
             if (opts?.onclick) {
                 b.addEventListener('click', opts.onclick);
             }
             return b;
         };
+        // Interactive palette helpers: external commands own the UI lifecycle.
+        // spotlight.js only exposes an interactive host and defers command completion
+        // until the command signals done/cancel via the returned promise.
+        let _interactivePending = null; // { resolve, reject }
+        const hideInteractive = () => {
+            try {
+                ui.paletteInteractive.classList.add('hidden');
+                ui.paletteInteractive.innerHTML = '';
+            } catch (_) {}
+        };
+        /**
+         * Open the interactive host and let the caller render into it.
+         * The renderFn receives (hostEl, done, cancel). Call done(value) to resolve
+         * the promise, or cancel(reason) to reject (or resolve null).
+         * @param {(host:HTMLElement, done:(v?:any)=>void, cancel:(reason?:any)=>void)=>void} renderFn
+         * @returns {Promise<any>}
+         */
+        const interactiveOpen = (renderFn) => {
+            // If there is a pending session, cancel it first
+            if (_interactivePending) {
+                try { _interactivePending.resolve?.(null); } catch (_) {}
+                _interactivePending = null;
+            }
+            hideInteractive();
+            ui.paletteInteractive.classList.remove('hidden');
+            return new Promise((resolve, reject) => {
+                _interactivePending = { resolve, reject };
+                const done = (val) => { try { hideInteractive(); } finally { const p = _interactivePending; _interactivePending = null; (p?.resolve||resolve)(val); } };
+                const cancel = (reason) => { try { hideInteractive(); } finally { const p = _interactivePending; _interactivePending = null; if (reason === undefined) { (p?.resolve||resolve)(null); } else { (p?.reject||reject)(reason); } } };
+                try {
+                    renderFn?.(ui.paletteInteractive, done, cancel);
+                } catch (e) {
+                    cancel(e);
+                }
+            });
+        };
+        /** Programmatically close the interactive host if open. */
+        const interactiveClose = () => {
+            if (_interactivePending) {
+                try { _interactivePending.resolve?.(null); } catch (_) {}
+                _interactivePending = null;
+            }
+            hideInteractive();
+        };
+
         const renderPalettes = () => {
             if (!ui.palettePrimary || !ui.paletteSelection) return;
             ui.palettePrimary.innerHTML = '';
             ui.paletteSelection.innerHTML = '';
             // Primary palette: Select Mode toggle and any primary commands
             const toggleBtn = makeBtn('Select Mode', {
-                primary: true, outline: !selectMode, onclick: () => {
+                'btn-primary': true, 'btn-outline': !selectMode, onclick: () => {
                     selectMode = !selectMode;
                     SpotlightRuntime.selectMode = selectMode;
                     if (!selectMode) {
                         clearSelection();
                     }
                     renderPalettes();
-                    rerenderList();
+                    // Recompute matches fully so adjacency filtering applies immediately on toggle
+                    refresh();
                 }
+            });
+            // Double-click: ensure select mode is active and toggle select all/none for current results
+            toggleBtn.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                // ensure active
+                if (!selectMode) {
+                    selectMode = true;
+                    SpotlightRuntime.selectMode = true;
+                }
+                const haveAny = selectedMap.size > 0;
+                if (haveAny) {
+                    clearSelection();
+                } else {
+                    try {
+                        const toSelect = Array.isArray(state.results) ? state.results.map(r => r && r.item).filter(Boolean) : [];
+                        for (const it of toSelect) {
+                            const k = itemKey(it);
+                            if (!selectedMap.has(k)) selectedMap.set(k, it);
+                        }
+                    } catch (_) { /* ignore */ }
+                }
+                renderPalettes();
+                rerenderList();
             });
             ui.palettePrimary.appendChild(toggleBtn);
             // External primary commands
             CommandRegistry.primary.forEach(cmd => {
-                const btn = makeBtn(cmd.label, { onclick: () => {
-                    try { cmd.run({ selected: Array.from(selectedMap.values()), app, getGraph, close }); } catch (e) { console.warn('OvumSpotlight command error', e); }
+                const btn = makeBtn(cmd.label, { 'btn-info': true, onclick: async () => {
+                    try {
+                        const maybe = cmd.run({ selected: Array.from(selectedMap.values()), app, getGraph, close, interactiveOpen, interactiveClose });
+                        if (maybe && typeof maybe.then === 'function') { await maybe; }
+                    } catch (e) { console.warn('OvumSpotlight command error', e); }
+                    finally { schedulePostCommandCleanup(); }
                 }});
                 ui.palettePrimary.appendChild(btn);
             });
@@ -578,8 +720,12 @@ app.registerExtension({
                 // Show externally registered selection commands that are applicable
                 CommandRegistry.selection.forEach(cmd => {
                     if (typeof cmd.isApplicable === 'function' && !cmd.isApplicable(sel)) return;
-                    const btn = makeBtn(cmd.label, { onclick: () => {
-                        try { cmd.run({ selected: sel, app, getGraph, close }); } catch (e) { console.warn('OvumSpotlight command error', e); }
+                    const btn = makeBtn(cmd.label, { 'btn-secondary' : true, 'btn-outline': true, onclick: async () => {
+                        try {
+                            const maybe = cmd.run({ selected: sel, app, getGraph, close, interactiveOpen, interactiveClose });
+                            if (maybe && typeof maybe.then === 'function') { await maybe; }
+                        } catch (e) { console.warn('OvumSpotlight command error', e); }
+                        finally { schedulePostCommandCleanup(); }
                     }});
                     ui.paletteSelection.appendChild(btn);
                 });
@@ -607,7 +753,7 @@ app.registerExtension({
                             console.warn('OvumSpotlight builtin command handler error', e);
                         }
                         // Fallback placeholder implementation
-                        console.log('[OvumSpotlight]', label, 'on selection:', ctx?.selected);
+                        console.log('[OvumSpotlight] not implemented:', label, 'on selection:', ctx?.selected);
                     }
                 });
             });
@@ -995,7 +1141,71 @@ app.registerExtension({
                 return String(it.title || "") + right + " " + String(it.id ?? "");
             }});
             currentFzf = fzf;
-            const baseMatches = fzf.find(searchTextForFzf).slice(0, maxMatches);
+
+            // Brace expansion support: expand queries like a/{foo,bar}/*.js into multiple alternatives
+            let expandedQueries = [];
+            try {
+                const ex = braces?.expand ? braces.expand(searchTextForFzf, { nodupes: true }) : [];
+                if (Array.isArray(ex) && ex.length > 0) {
+                    expandedQueries = ex;
+                }
+                console.log("Brace expansion pattern", expandedQueries.join(", "));
+            } catch (_) {
+                console.log("Invalid brace expansion pattern", searchTextForFzf);
+                // ignore and fallback below
+            }
+            if (!expandedQueries || expandedQueries.length === 0) {
+                expandedQueries = [searchTextForFzf];
+            }
+            // Deduplicate queries and trim empties (but keep empty if original query was empty to mean 'match all')
+            const originalWasEmpty = String(searchTextForFzf ?? '') === '';
+            expandedQueries = Array.from(new Set(expandedQueries.map(q => String(q ?? '').trim())));
+            if (!originalWasEmpty) {
+                expandedQueries = expandedQueries.filter(q => q.length > 0);
+            } else if (expandedQueries.length === 0) {
+                expandedQueries = [''];
+            }
+            console.log("Expanded queries", expandedQueries);
+
+            // If multiple expanded queries, union the results preserving the order of each query block
+            let combinedMatches = [];
+            if (expandedQueries.length <= 1) {
+                combinedMatches = fzf.find(expandedQueries[0]);
+            } else {
+                const seen = new Set();
+                for (const q of expandedQueries) {
+                    const arr = fzf.find(q);
+                    for (const m of arr) {
+                        const key = m.item; // object identity is stable
+                        if (!seen.has(key)) {
+                            seen.add(key);
+                            combinedMatches.push(m);
+                        }
+                    }
+                }
+            }
+
+            const baseMatches = combinedMatches
+                .filter(match => {
+                    const positions = match.positions;
+                    if (positions.size <= 1) {
+                        return true;
+                    }
+
+                    // Convert positions Set to sorted array for checking adjacency
+                    const posArray = Array.from(positions).sort((a, b) => a - b);
+
+                    // Check if any positions are adjacent
+                    for (let i = 0; i < posArray.length - 1; i++) {
+                        if (posArray[i + 1] - posArray[i] === 1) {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                })
+                .sort((a, b) => (b.score || 0) - (a.score || 0))
+                .slice(0, maxMatches);
             const matches = augmentMatchesWithSelection(baseMatches);
             state.results = matches;
             state.active = 0;
@@ -1046,6 +1256,8 @@ app.registerExtension({
         }
 
         function close () {
+            // Ensure any interactive UI is closed and promise settled
+            try { interactiveClose(); } catch (_) {}
             // If a preview was active and no final selection happened, restore graph, selection, and viewport (in that order)
             if (!__ovumSpotlightUserSelectedNode) {
                 if (shiftPreviewSavedGraphContext) {

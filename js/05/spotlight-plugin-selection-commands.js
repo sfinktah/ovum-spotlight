@@ -1,6 +1,32 @@
-import {app} from "../../../scripts/app.js";
+/** @typedef {import("@comfyorg/comfyui-frontend-types").LGraphNode} LGraphNode */
+/** @typedef {import("@comfyorg/comfyui-frontend-types").LLink} LLink */
+/** @typedef {import("@comfyorg/comfyui-frontend-types").INodeInputSlot} INodeInputSlot */
+/** @typedef {import("@comfyorg/comfyui-frontend-types").INodeOutputSlot} INodeOutputSlot */
+/** @typedef {import("@comfyorg/comfyui-frontend-types").ISlotType} ISlotType */
+/** @typedef {import("@comfyorg/comfyui-frontend-types").LiteGraph} LiteGraph */
+/** @typedef {import("@comfyorg/comfyui-frontend-types").SubgraphIO} SubgraphIO */
+/** @typedef {import('@comfyorg/comfyui-frontend-types').ComfyApp} ComfyApp */
+/** @typedef {import('@comfyorg/comfyui-frontend-types').ToastMessageOptions} ToastMessageOptions */
+/** @typedef {import("@comfyorg/comfyui-frontend-types").LGraphCanvas} LGraphCanvas */
+/** @typedef {import("@comfyorg/comfyui-frontend-types").LGraph} LGraph */
+/** @typedef {import("@comfyorg/comfyui-frontend-types").LLink} LLink */
+/** @typedef {import("@comfyorg/comfyui-frontend-types").NodeInputSlot} NodeInputSlot */
+/** @typedef {import("@comfyorg/comfyui-frontend-types").NodeOutputSlot} NodeOutputSlot */
+/** @typedef {import("@comfyorg/comfyui-frontend-types").Subgraph} Subgraph */
+/** @typedef {import("../typings/ComfyNode").ComfyNode} ComfyNode */
+/** @typedef {import("../typings/app-import-types.js")} */
+/** @typedef {import("../common/graphHelpersForTwinNodes.js").GraphHelpers} GraphHelpers */
+/** @typedef {import("@comfyorg/comfyui-frontend-types").IWidget} IWidget */
 
 /** @typedef {import('./spotlight-typedefs.js').SpotlightItem} SpotlightItem */
+
+import {app} from "../../../scripts/app.js";
+import {Fzf} from "/ovum-spotlight/node_modules/fzf/dist/fzf.es.js";
+import {getNodeDefsCached} from "../common/ovum_helpers.js";
+/** @type {ComfyApp} */
+try { // noinspection SillyAssignmentJS
+    app = app; } catch (_) {}
+
 
 // Selection command implementations for Spotlight: remove, replace, bypass, color, align
 // This plugin supplies handlers for the built-in labels so the palette buttons do real work.
@@ -32,13 +58,13 @@ app.registerExtension({
             const graph = getGraph();
             if (!graph) return;
             const nodes = toNodes(selected);
-            const links = toLinks(selected);
-            // Remove links first, then nodes
-            for (const lk of links) {
-                try { graph.removeLink?.(lk.id ?? lk); } catch (_) {}
-            }
+            // const links = toLinks(selected);
+            // // Remove links first, then nodes
+            // for (const lk of links) {
+            //     try { graph.removeLink?.(lk.id ?? lk); } catch (_) {}
+            // }
             for (const n of nodes) {
-                try { graph.removeNode?.(n); } catch (_) {}
+                try { graph.remove(n); } catch (_) {}
             }
             requestDraw();
         };
@@ -69,7 +95,7 @@ app.registerExtension({
                                 } catch (_) {}
                             }
                         }
-                        try { graph.removeNode?.(n); } catch (_) {}
+                        try { graph.remove?.(n); } catch (_) {}
                         continue;
                     }
                     // Simple case: one input link and N output links on slot 0
@@ -85,7 +111,7 @@ app.registerExtension({
                             }
                         }
                     }
-                    try { graph.removeNode?.(n); } catch (_) {}
+                    try { graph.remove?.(n); } catch (_) {}
                 } catch (_) {}
             }
             requestDraw();
@@ -142,48 +168,239 @@ app.registerExtension({
             requestDraw();
         };
 
-        // replace: minimal implementation – recreate nodes of the same type and swap
-        api.__builtinHandlers.replace = ({ selected }) => {
+        // replace: recreate nodes, optionally letting the user choose a target class via interactiveOpen
+        api.__builtinHandlers.replace = async ({selected, args, interactiveOpen}) => {
             const graph = getGraph();
             const nodes = toNodes(selected);
-            if (!graph || !nodes.length) return;
-            for (const oldNode of nodes) {
+            if (!nodes?.length) return;
+
+            // Determine target type: from args or via interactive picker
+            let targetType = args?.targetType;
+            if (!targetType && typeof interactiveOpen === 'function') {
                 try {
-                    const type = oldNode.type || oldNode.comfyClass || oldNode.title;
-                    if (!type) continue;
-                    const fresh = LiteGraph.createNode?.(type);
-                    if (!fresh) continue;
-                    graph.add(fresh);
-                    // Position new node at the old position
-                    fresh.pos = [oldNode.pos?.[0] ?? 0, (oldNode.pos?.[1] ?? 0) + 10];
-                    // Attempt to rewire: connect inputs/outputs 1:1 by slot index
-                    try {
-                        // Inputs: for each input slot, if old had a link, connect it to fresh
-                        const inCount = (oldNode.inputs || []).length;
-                        for (let i = 0; i < inCount; i++) {
-                            const linkId = oldNode.inputs?.[i]?.link;
-                            if (linkId != null) {
-                                const l = graph.getLink?.(linkId);
-                                if (l) {
-                                    try { graph.connect(l.origin_id, l.origin_slot ?? 0, fresh.id, i); } catch (_) {}
+                    // Kick off async loading of node definitions in the background
+                    const defsPromise = getNodeDefsCached().catch(e => { console.warn('getNodeDefsCached failed', e); return null; });
+                    // Seed the query from the first selected node type to make autocomplete smarter
+                    const defaultQuery = String((nodes?.[0]?.comfyClass || nodes?.[0]?.type || '') ?? '').trim();
+
+                    // Open the interactive UI immediately with a minimal placeholder, then upgrade when defs arrive
+                    targetType = await interactiveOpen((host, done, cancel) => {
+                        host.innerHTML = '';
+
+                        // Wrap done/cancel so we can stop background updates when dialog closes
+                        let closed = false;
+                        const doneWrap = (v) => { closed = true; try { done(v); } catch (_) {} };
+                        const cancelWrap = () => { closed = true; try { cancel(); } catch (_) {} };
+
+                        // Minimal layout while we wait
+                        const box = document.createElement('div');
+                        box.className = 'ovum-spotlight-interactive box box-compact';
+                        const label = document.createElement('div');
+                        label.textContent = 'Replace with node type…';
+                        label.className = 'text-xs opacity-70 mb-1';
+                        const waiting = document.createElement('div');
+                        waiting.className = 'text-sm opacity-70 flex items-center gap-2';
+                        const spinner = document.createElement('span');
+                        spinner.className = 'loading loading-spinner loading-xs';
+                        const waitText = document.createElement('span');
+                        waitText.textContent = 'Loading node definitions, please wait…';
+                        waiting.appendChild(spinner);
+                        waiting.appendChild(waitText);
+                        const controls = document.createElement('div');
+                        controls.className = 'mt-2 flex gap-2';
+                        const btnCancel = document.createElement('button');
+                        btnCancel.className = 'btn btn-xs';
+                        btnCancel.textContent = 'Cancel';
+                        btnCancel.addEventListener('click', () => cancelWrap());
+                        controls.appendChild(btnCancel);
+                        box.appendChild(label);
+                        box.appendChild(waiting);
+                        box.appendChild(controls);
+                        host.appendChild(box);
+
+                        // When defs are ready, replace the placeholder with the full FZF-powered UI
+                        defsPromise.then(defs => {
+                            if (closed) return;
+                            const classNames = defs ? Object.keys(defs).sort((a,b)=> a.localeCompare(b)) : [];
+
+                            // Build enhanced FZF-backed list UI with better autocomplete
+                            host.innerHTML = '';
+                            const box = document.createElement('div');
+                            box.className = 'ovum-spotlight-interactive box box-compact';
+                            const label = document.createElement('div');
+                            label.textContent = 'Replace with node type…';
+                            label.className = 'text-xs opacity-70 mb-1';
+                            const input = document.createElement('input');
+                            input.className = 'input input-bordered input-xs w-full ovum-spotlight-ac-input';
+                            input.placeholder = 'Type a node class (fuzzy, Tab to autocomplete)…';
+                            const list = document.createElement('div');
+                            list.className = 'ovum-spotlight-ac-list';
+                            const controls = document.createElement('div');
+                            controls.className = 'mt-2 flex gap-2';
+                            const btnCancel = document.createElement('button');
+                            btnCancel.className = 'btn btn-xs';
+                            btnCancel.textContent = 'Cancel';
+                            controls.appendChild(btnCancel);
+                            box.appendChild(label);
+                            box.appendChild(input);
+                            box.appendChild(list);
+                            box.appendChild(controls);
+                            host.appendChild(box);
+
+                            // Configure FZF (case-insensitive, normalize) for nicer matching
+                            const fzf = new Fzf(classNames, { selector: (s)=> s, casing: 'case-insensitive', normalize: true });
+                            let matches = classNames.map(s => ({ item: s }));
+                            let activeIdx = 0;
+
+                            const highlightMatch = (text, positions) => {
+                                if (!positions || !positions.length) return text;
+                                // positions are indices of matched chars; wrap them
+                                let out = '';
+                                const posSet = new Set(positions);
+                                for (let i = 0; i < text.length; i++) {
+                                    const ch = text[i];
+                                    if (posSet.has(i)) out += '<mark class="px-0 py-0 bg-warning/30">' + ch.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</mark>';
+                                    else out += ch.replace(/</g,'&lt;').replace(/>/g,'&gt;');
                                 }
-                            }
-                        }
-                        // Outputs: connect fresh outputs to the same targets
-                        const outCount = (oldNode.outputs || []).length;
-                        for (let o = 0; o < outCount; o++) {
-                            const outLinks = oldNode.outputs?.[o]?.links || [];
-                            for (const lid of outLinks) {
-                                const l = graph.getLink?.(lid);
-                                if (l) {
-                                    try { graph.connect(fresh.id, o, l.target_id, l.target_slot ?? 0); } catch (_) {}
+                                return out;
+                            };
+
+                            const renderList = () => {
+                                list.innerHTML = '';
+                                const slice = matches.slice(0, 200);
+                                slice.forEach((m, idx) => {
+                                    const div = document.createElement('div');
+                                    div.className = 'ovum-spotlight-ac-item' + (idx===activeIdx ? ' active' : '');
+                                    // try to highlight the matched characters if provided by fzf
+                                    try {
+                                        if (m.positions) {
+                                            div.innerHTML = highlightMatch(m.item, m.positions);
+                                        } else {
+                                            div.textContent = m.item;
+                                        }
+                                    } catch(_) { div.textContent = m.item; }
+                                    div.addEventListener('click', () => doneWrap(m.item));
+                                    div.addEventListener('mousemove', () => { if (activeIdx !== idx) { activeIdx = idx; renderList(); } });
+                                    list.appendChild(div);
+                                });
+                                const activeEl = list.children[activeIdx];
+                                if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+                            };
+
+                            const doSearch = () => {
+                                const q = input.value || '';
+                                matches = q ? fzf.find(q) : classNames.map(s=>({item:s}));
+                                // Keep activeIdx within bounds and prefer exact match if present
+                                const exactIdx = matches.findIndex(m => m.item === q && q.length > 0);
+                                activeIdx = exactIdx >= 0 ? exactIdx : 0;
+                                renderList();
+                            };
+
+                            const move = (d) => {
+                                if (!matches.length) return;
+                                activeIdx = Math.max(0, Math.min(matches.length - 1, activeIdx + d));
+                                renderList();
+                            };
+
+                            const page = (d) => {
+                                if (!matches.length) return;
+                                activeIdx = Math.max(0, Math.min(matches.length - 1, activeIdx + d * 10));
+                                renderList();
+                            };
+
+                            const accept = () => {
+                                const m = matches?.[activeIdx];
+                                if (m) doneWrap(m.item);
+                            };
+
+                            const autocomplete = () => {
+                                const m = matches?.[activeIdx];
+                                if (m) {
+                                    input.value = m.item;
+                                    doSearch();
+                                    // place caret at end
+                                    try { input.setSelectionRange(input.value.length, input.value.length); } catch(_) {}
                                 }
+                            };
+
+                            input.addEventListener('keydown', (e) => {
+                                if (e.key === 'Escape') { e.preventDefault(); cancelWrap(); }
+                                else if (e.key === 'Enter') { e.preventDefault(); accept(); }
+                                else if (e.key === 'Tab' || e.key === 'ArrowRight') { e.preventDefault(); autocomplete(); }
+                                else if (e.key === 'ArrowDown') { e.preventDefault(); move(+1); }
+                                else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+                                else if (e.key === 'PageDown') { e.preventDefault(); page(+1); }
+                                else if (e.key === 'PageUp') { e.preventDefault(); page(-1); }
+                                else if (e.key === 'Home') { e.preventDefault(); activeIdx = 0; renderList(); }
+                                else if (e.key === 'End') { e.preventDefault(); activeIdx = Math.max(0, matches.length - 1); renderList(); }
+                                e.stopPropagation();
+                            });
+                            input.addEventListener('input', doSearch);
+                            btnCancel.addEventListener('click', () => cancelWrap());
+
+                            // Seed with the defaultQuery (current node type) to improve autocomplete context
+                            if (defaultQuery) {
+                                input.value = defaultQuery;
+                                doSearch();
+                                // If the exact type exists, preselect it so Enter accepts it quickly
+                                const exactIdx = matches.findIndex(m => m.item === defaultQuery);
+                                if (exactIdx >= 0) { activeIdx = exactIdx; renderList(); }
+                            } else {
+                                renderList();
                             }
+                            setTimeout(()=> input.focus(), 0);
+                        }).catch(e => {
+                            if (closed) return;
+                            // Show failure state if defs could not be loaded
+                            waiting.textContent = 'Failed to load node definitions.';
+                            console.warn('replace interactive picker failed to load defs', e);
+                        });
+                    });
+                } catch (e) {
+                    console.warn('replace interactive picker failed', e);
+                }
+            }
+
+            const LiteGraph = window.LiteGraph;
+            for (const node of nodes) {
+                if (node.comfyClass || node.type) {
+                    const originalType = node.comfyClass || node.type;
+                    const type = targetType || originalType;
+                    const newNode = LiteGraph.createNode?.(type);
+                    if (!newNode) {
+                        continue;
+                    }
+                    newNode.title = node.title;
+                    // Port the position, size, and properties from the old node.
+                    try { newNode.pos = [...node.pos]; } catch(_) { newNode.pos = node.pos ? [node.pos[0], node.pos[1]] : [0,0]; }
+                    try { newNode.size = [...node.size]; } catch(_) { if (node.size) newNode.size = [node.size[0], node.size[1]]; }
+                    try { newNode.properties = {...node.properties}; } catch(_) {}
+                    // Collect links data before removal
+                    const links = [];
+                    const g = (node.graph || app.graph);
+                    for (const [index, output] of (node.outputs||[]).entries()) {
+                        for (const linkId of output.links || []) {
+                            const link = g.links?.[linkId];
+                            if (!link) continue;
+                            const targetNode = g.getNodeById?.(link.target_id);
+                            if (targetNode) links.push({node: newNode, slot: index, targetNode, targetSlot: link.target_slot});
                         }
-                    } catch (_) {}
-                    // Remove old
-                    try { graph.removeNode?.(oldNode); } catch (_) {}
-                } catch (_) {}
+                    }
+                    for (const [index, input] of (node.inputs||[]).entries()) {
+                        const linkId = input?.link;
+                        if (linkId != null) {
+                            const link = g.links?.[linkId];
+                            if (!link) continue;
+                            const originNode = g.getNodeById?.(link.origin_id);
+                            if (originNode) links.push({ node: originNode, slot: link.origin_slot, targetNode: newNode, targetSlot: index });
+                        }
+                    }
+                    try { graph.add?.(newNode); } catch(_) {}
+                    for (const link of links) {
+                        try { link.node.connect?.(link.slot, link.targetNode, link.targetSlot); } catch(_) {}
+                    }
+                    try { graph.remove?.(node); } catch(_) {}
+                }
             }
             requestDraw();
         };
