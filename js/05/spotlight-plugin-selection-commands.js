@@ -22,6 +22,8 @@
 
 import {app} from "../../../scripts/app.js";
 import {Fzf} from "/ovum-spotlight/node_modules/fzf/dist/fzf.es.js";
+import filter from "/ovum-spotlight/node_modules/lodash-es/filter.js";
+import first from "/ovum-spotlight/node_modules/lodash-es/first.js";
 import {getNodeDefsCached} from "../common/ovum_helpers.js";
 /** @type {ComfyApp} */
 try { // noinspection SillyAssignmentJS
@@ -44,7 +46,10 @@ app.registerExtension({
         function requestDraw() { try { app?.canvas?.draw(true, true); } catch (_) {} }
         function closeSpotlightSafe() { try { api.close?.(); } catch (_) {} }
 
-        /** @param {SpotlightItem[]} selected */
+        /**
+         * @param {SpotlightItem[]} selected
+         * @returns {ComfyNode[]}
+         */
         function toNodes(selected) {
             return (selected || []).map(it => it && it["@type"] === 'node' ? it.node : null).filter(Boolean);
         }
@@ -119,33 +124,50 @@ app.registerExtension({
 
         // color: set a simple preset color on nodes. Supports keywords in node title: red, green, blue, yellow, purple, cyan, orange, teal, none
         const colorMap = {
-            red:    "#533",
-            green:  "#353",
-            blue:   "#335",
-            yellow: "#653",
-            purple: "#535",
-            cyan:   "#355",
-            orange: "#743",
-            teal:   "#366",
-            none:   null
-        };
+            // litegraph colors
+            red:       { color: "#322",    bgcolor: "#533",    groupcolor: "#a88"    },
+            brown:     { color: "#332922", bgcolor: "#593930", groupcolor: "#b06634" },
+            green:     { color: "#232",    bgcolor: "#353",    groupcolor: "#8a8"    },
+            blue:      { color: "#223",    bgcolor: "#335",    groupcolor: "#88a"    },
+            pale_blue: { color: "#2a363b", bgcolor: "#3f5159", groupcolor: "#3f789e" },
+            cyan:      { color: "#233",    bgcolor: "#355",    groupcolor: "#8aa"    },
+            purple:    { color: "#323",    bgcolor: "#535",    groupcolor: "#a1309b" },
+            yellow:    { color: "#432",    bgcolor: "#653",    groupcolor: "#b58b2a" },
+            black:     { color: "#222",    bgcolor: "#000",    groupcolor: "#444"    },
+            // extra colors
+            indigo1:   { color: '#334',    bgcolor: '#446',    groupcolor: '#88a'    },
+            indigo2:   { color: '#434',    bgcolor: '#646',    groupcolor: '#a8a'    },
+            magenta1:  { color: '#424',    bgcolor: '#636',    groupcolor: '#a8a'    },
+            magenta2:  { color: '#524',    bgcolor: '#735',    groupcolor: '#a88'    },
+            olive:     { color: '#332',    bgcolor: '#553',    groupcolor: '#aa8'    },
+            orange:    { color: '#532',    bgcolor: '#743',    groupcolor: '#a88'    },
+            teal:      { color: '#244',    bgcolor: '#366',    groupcolor: '#8aa'    },
+
+        }
         api.__builtinHandlers.color = ({ selected }) => {
             const nodes = toNodes(selected);
             if (!nodes.length) return;
             // Guess color from the first selected node title token if matches a preset; default to teal
-            let picked = "#366";
-            try {
-                const title = String(nodes[0]?.title || "").toLowerCase();
-                for (const k of Object.keys(colorMap)) {
-                    if (title.includes(k)) { picked = colorMap[k] || null; break; }
-                }
-            } catch (_) {}
+            let picked = filter(colorMap, c => nodes[0].color === c.color || nodes[0].bgcolor === c.bgcolor);
+            if (picked.length) {
+                picked = first(picked);
+                // Find next color in colorMap
+                const colorKeys = Object.keys(colorMap);
+                const currentIndex = colorKeys.findIndex(key => colorMap[key] === picked);
+                const nextIndex = (currentIndex + 1) % colorKeys.length;
+                picked = colorMap[colorKeys[nextIndex]];
+            }
+            else {
+                picked = colorMap.teal;
+            }
+            
             for (const n of nodes) {
                 try {
                     if (picked == null) {
                         delete n.bgcolor;
                     } else {
-                        n.bgcolor = picked;
+                        n.bgcolor = picked.bgcolor;
+                        n.color = picked.color;
                     }
                 } catch (_) {}
             }
@@ -166,6 +188,16 @@ app.registerExtension({
                 } catch (_) {}
             }
             requestDraw();
+        };
+
+        // select: select given nodes and fit view to selection
+        api.__builtinHandlers.select = ({ selected }) => {
+            try {
+                const nodes = toNodes(selected);
+                if (!nodes?.length) return;
+                try { app?.canvas?.selectNodes?.(nodes, false); } catch (_) {}
+                try { app?.canvas?.fitViewToSelectionAnimated?.(); } catch (_) {}
+            } catch (_) {}
         };
 
         // replace: recreate nodes, optionally letting the user choose a target class via interactiveOpen
