@@ -50,7 +50,7 @@ app.registerExtension({
                     const ctrl = new AbortController();
                     d.controller = ctrl;
                     try {
-                        const res = await fetch(`/ovum-spotlight/spotlight/google?q=${encodeURIComponent(currentQ)}`, { signal: ctrl.signal });
+                        const res = await fetch(`/spotlight/google?q=${encodeURIComponent(currentQ)}`, { signal: ctrl.signal });
                         const data = await res.json();
                         const resolvers = d.resolvers.slice();
                         d.resolvers = [];
@@ -153,7 +153,7 @@ app.registerExtension({
                     const ctrl = new AbortController();
                     d.controller = ctrl;
                     try {
-                        const res = await fetch(`/ovum-spotlight/spotlight/age?name=${encodeURIComponent(currentName)}`, { signal: ctrl.signal });
+                        const res = await fetch(`/spotlight/age?name=${encodeURIComponent(currentName)}`, { signal: ctrl.signal });
                         const data = await res.json();
                         const resolvers = d.resolvers.slice();
                         d.resolvers = [];

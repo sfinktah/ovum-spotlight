@@ -11,7 +11,6 @@
 // /** @typedef {import("./spotlight-typedefs.js").KeywordHandler} KeywordHandler */
 // /** @typedef {import("./spotlight-typedefs.js").DefaultHandler} DefaultHandler */
 // /** @typedef {import("./spotlight-typedefs.js").ISpotlightRegistry} ISpotlightRegistry */
-// /** @typedef {import("./spotlight-typedefs.js").IFilterRegistry} IFilterRegistry */
 // /** @typedef {import("./spotlight-typedefs.js").FilterFn} FilterFn */
 // /** @typedef {import("./spotlight-typedefs.js").ParsedFilter} ParsedFilter */
 // /** @typedef {import("./spotlight-typedefs.js").WidgetMatch} WidgetMatch */
@@ -104,8 +103,10 @@
  * @typedef {Object} ISpotlightRegistry
  * @property {Map<string, KeywordHandler>} keywordHandlers
  * @property {DefaultHandler[]} defaultHandlers
+ * @property {Map<string, FilterFn>} [filters]
  * @property {(keyword:string, callback:KeywordHandler)=>void} registerKeywordHandler
  * @property {(callback:DefaultHandler)=>void} registerDefaultHandler
+ * @property {(cmd:SpotlightCommand)=>void} [registerSelectionCommand]
  * @property {(s:string)=>void} [_setPlaceholder]
  * @property {(nodeType:string, fn: NodeInfoProvider)=>void} [registerNodeInfoProvider]
  * @property {(args:MakeNodeItemArgs) => NodeItem} [makeNodeItem]
@@ -128,12 +129,6 @@
  * @property {string} [raw]
  */
 
-/**
- * Registry for filters (key:value query pairs) similar to the Spotlight keyword registry.
- * @typedef {Object} IFilterRegistry
- * @property {Map<string, FilterFn>} filters
- * @property {(name:string, callback:FilterFn)=>void} registerFilter
- */
 
 /**
  * Highlight positions array used for text highlighting utilities.
@@ -172,6 +167,8 @@
  * @property {SpotlightHandlerContext['app']} app ComfyUI app
  * @property {SpotlightHandlerContext['getGraph']} getGraph Get current graph
  * @property {()=>void} close Close Spotlight
+ * @property {(builder:(host:HTMLElement, done:(value:any)=>void, cancel:()=>void)=>void|Promise<void>)=>Promise<any>} [interactiveOpen] Open an interactive mini UI and resolve with a value.
+ * @property {()=>void} [interactiveClose] Close the interactive mini UI if open.
  */
 
 /**

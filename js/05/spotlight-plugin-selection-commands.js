@@ -38,9 +38,10 @@ app.registerExtension({
         // Wait for Spotlight API
         // @ts-ignore
         const api = (window.OvumSpotlight = window.OvumSpotlight || {});
-        // Install handler bag consumed by spotlight.js built-in buttons
+        // Use Spotlight plugin API to register selection commands
         // @ts-ignore
-        api.__builtinHandlers = api.__builtinHandlers || {};
+        api.registerSelectionCommand = api.registerSelectionCommand || (cmd => (window.OvumSpotlight && window.OvumSpotlight.registerSelectionCommand) ? window.OvumSpotlight.registerSelectionCommand(cmd) : null);
+        const reg = (cmd) => { try { api.registerSelectionCommand(cmd); } catch (_) {} };
 
         function getGraph() { return app?.graph; }
         function requestDraw() { try { app?.canvas?.draw(true, true); } catch (_) {} }
@@ -59,7 +60,7 @@ app.registerExtension({
         }
 
         // remove: delete selected nodes and links
-        api.__builtinHandlers.remove = ({ selected }) => {
+        reg({ id: 'builtin:remove', label: 'remove', run: ({ selected }) => {
             const graph = getGraph();
             if (!graph) return;
             const nodes = toNodes(selected);
@@ -72,10 +73,10 @@ app.registerExtension({
                 try { graph.remove(n); } catch (_) {}
             }
             requestDraw();
-        };
+        }});
 
         // bypass: rewire simple single-in single-out nodes and remove them
-        api.__builtinHandlers.bypass = ({ selected }) => {
+        reg({ id: 'builtin:bypass', label: 'bypass', run: ({ selected }) => {
             const graph = getGraph();
             if (!graph) return;
             const nodes = toNodes(selected);
@@ -120,7 +121,7 @@ app.registerExtension({
                 } catch (_) {}
             }
             requestDraw();
-        };
+        }});
 
         // color: set a simple preset color on nodes. Supports keywords in node title: red, green, blue, yellow, purple, cyan, orange, teal, none
         const colorMap = {
@@ -144,7 +145,7 @@ app.registerExtension({
             teal:      { color: '#244',    bgcolor: '#366',    groupcolor: '#8aa'    },
 
         }
-        api.__builtinHandlers.color = ({ selected }) => {
+        reg({ id: 'builtin:color', label: 'color', run: ({ selected }) => {
             const nodes = toNodes(selected);
             if (!nodes.length) return;
             // Guess color from the first selected node title token if matches a preset; default to teal
@@ -172,10 +173,10 @@ app.registerExtension({
                 } catch (_) {}
             }
             requestDraw();
-        };
+        }});
 
         // align: align selected nodes left and top with small vertical spacing
-        api.__builtinHandlers.align = ({ selected }) => {
+        reg({ id: 'builtin:align', label: 'align', run: ({ selected }) => {
             const nodes = toNodes(selected);
             if (nodes.length < 2) return;
             const minX = Math.min(...nodes.map(n => n?.pos?.[0] ?? 0));
@@ -188,20 +189,20 @@ app.registerExtension({
                 } catch (_) {}
             }
             requestDraw();
-        };
+        }});
 
         // select: select given nodes and fit view to selection
-        api.__builtinHandlers.select = ({ selected }) => {
+        reg({ id: 'builtin:select', label: 'select', run: ({ selected, app }) => {
             try {
                 const nodes = toNodes(selected);
                 if (!nodes?.length) return;
                 try { app?.canvas?.selectNodes?.(nodes, false); } catch (_) {}
                 try { app?.canvas?.fitViewToSelectionAnimated?.(); } catch (_) {}
             } catch (_) {}
-        };
+        }});
 
         // replace: recreate nodes, optionally letting the user choose a target class via interactiveOpen
-        api.__builtinHandlers.replace = async ({selected, args, interactiveOpen}) => {
+        reg({ id: 'builtin:replace', label: 'replace', run: async ({selected, args, interactiveOpen}) => {
             const graph = getGraph();
             const nodes = toNodes(selected);
             if (!nodes?.length) return;
@@ -435,6 +436,7 @@ app.registerExtension({
                 }
             }
             requestDraw();
-        };
+        }});
+
     }
 });

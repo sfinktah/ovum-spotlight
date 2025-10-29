@@ -11,6 +11,9 @@ import {
     focusNodeWithOverlayAwareCenterPreview as helperFocusNodeWithOverlayAwareCenterPreview
 } from "./spotlight-helper-focus.js";
 import {createShowResult} from "./spotlight-helper-showresult.js";
+import {SpotlightRegistry} from "./spotlight-registry.js";
+import {buildSearchFromJson, NodeInfoProviders, makeNodeItem} from "./spotlight-nodeinfo.js";
+import {parseFilters, applyFilters} from "./spotlight-filters.js";
 
 // Minimal Alfred-like spotlight for ComfyUI graph
 // Uses fzf from npm
@@ -41,7 +44,6 @@ import {createShowResult} from "./spotlight-helper-showresult.js";
 /** @typedef {import("./spotlight-typedefs.js").KeywordHandler} KeywordHandler */
 /** @typedef {import("./spotlight-typedefs.js").DefaultHandler} DefaultHandler */
 /** @typedef {import("./spotlight-typedefs.js").ISpotlightRegistry} ISpotlightRegistry */
-/** @typedef {import("./spotlight-typedefs.js").IFilterRegistry} IFilterRegistry */
 /** @typedef {import("./spotlight-typedefs.js").FilterFn} FilterFn */
 /** @typedef {import("./spotlight-typedefs.js").ParsedFilter} ParsedFilter */
 
@@ -97,165 +99,8 @@ const renderResults = createShowResult(SpotlightRuntime);
   *
   * @type {ISpotlightRegistry}
  */
-// Simple plugin registry to allow external nodes to inject spotlight search providers
-const SpotlightRegistry = {
-    keywordHandlers: new Map(), // keyword -> (text:string)=>{items, handler}
-    defaultHandlers: [],        // list of () => {items, handler:""}
-    registerKeywordHandler (keyword, callback) {
-        if (!keyword || typeof callback !== "function") {
-            return;
-        }
-        this.keywordHandlers.set(String(keyword).toLowerCase(), callback);
-    },
-    registerDefaultHandler (callback) {
-        if (typeof callback === "function") {
-            this.defaultHandlers.push(callback);
-        }
-    }
-};
 
-// Helper to build flat search text and offsets from nested array [title, itemClass, subtitleNames[], detailPairs[]]
-function buildSearchFromJson (searchJson) {
-    const parts = [];
-    const offsets = { title: [0, 0], itemClass: [0, 0], subtitles: [], details: [] };
-    let pos = 0;
-    const pushPart = (text) => {
-        const start = pos;
-        const t = String(text || "");
-        pos += t.length;
-        const end = pos;
-        parts.push(t);
-        return [start, end];
-    };
-    const pushSep = () => { parts.push(" "); pos += 1; };
 
-    const title = searchJson?.[0] ?? "";
-    const itemClass = searchJson?.[1] ?? "";
-    const subtitles = Array.isArray(searchJson?.[2]) ? searchJson[2] : [];
-    const details = Array.isArray(searchJson?.[3]) ? searchJson[3] : [];
-
-    // title
-    offsets.title = pushPart(title);
-    pushSep();
-    // class
-    offsets.itemClass = pushPart(itemClass);
-    pushSep();
-    // subtitles
-    for (let i = 0; i < subtitles.length; i++) {
-        const s = String(subtitles[i] ?? "");
-        const [start, end] = pushPart(s);
-        offsets.subtitles.push({ text: s, start, end });
-        if (i < subtitles.length - 1) { pushSep(); }
-    }
-    if (subtitles.length) { pushSep(); }
-    // details
-    for (let i = 0; i < details.length; i++) {
-        const d = String(details[i] ?? "");
-        const [start, end] = pushPart(d);
-        offsets.details.push({ text: d, start, end });
-        if (i < details.length - 1) { pushSep(); }
-    }
-
-    const flat = parts.join("");
-    return { flat, offsets };
-}
-
-// Registry for per-node extra info providers, so UI scripts can enrich spotlight search/display
-const NodeInfoProviders = {
-    // key: node type (comfyClass or type) lowercased -> provider function
-    map: new Map(),
-    /**
-     * Register a provider for a node type.
-     * @param {string} nodeType
-     * @param {(node:any)=>({details?:string[]|string, itemClass?:string, itemClassSuffix?:string, titleSuffix?:string})} fn
-     */
-    register (nodeType, fn) {
-        if (!nodeType || typeof fn !== 'function') return;
-        this.map.set(String(nodeType).toLowerCase(), fn);
-    },
-    /**
-     * Query providers and optional node instance method to get extra info.
-     * @param {any} node
-     */
-    get (node) {
-        const out = { details: [], itemClass: undefined, itemClassSuffix: undefined, titleSuffix: undefined };
-        try {
-            // 1) Instance-level hook (UI can patch node.getSpotlightInfo = () => ({...}))
-            const inst = typeof node?.getSpotlightInfo === 'function' ? node.getSpotlightInfo() : null;
-            if (inst && typeof inst === 'object') {
-                if (Array.isArray(inst.details)) out.details.push(...inst.details.map(String));
-                else if (typeof inst.details === 'string') out.details.push(inst.details);
-                if (typeof inst.itemClass === 'string') out.itemClass = inst.itemClass;
-                if (typeof inst.itemClassSuffix === 'string') out.itemClassSuffix = inst.itemClassSuffix;
-                if (typeof inst.titleSuffix === 'string') out.titleSuffix = inst.titleSuffix;
-            }
-            // 2) Registered provider by node.comfyClass or node.type
-            const keyA = String(node?.comfyClass || '').toLowerCase();
-            const keyB = String(node?.type || '').toLowerCase();
-            const fn = this.map.get(keyA) || this.map.get(keyB);
-            if (fn) {
-                const info = fn(node) || {};
-                if (Array.isArray(info.details)) out.details.push(...info.details.map(String));
-                else if (typeof info.details === 'string') out.details.push(info.details);
-                if (typeof info.itemClass === 'string') out.itemClass = info.itemClass;
-                if (typeof info.itemClassSuffix === 'string') out.itemClassSuffix = info.itemClassSuffix;
-                if (typeof info.titleSuffix === 'string') out.titleSuffix = info.titleSuffix;
-            }
-        } catch (e) {
-            console.warn('OvumSpotlight: node info provider error', e);
-        }
-        return out;
-    }
-};
-
-// Expose API for UI scripts to register providers
-// @ts-ignore
-window.OvumSpotlight = window.OvumSpotlight || {};
-// @ts-ignore
-window.OvumSpotlight.registerNodeInfoProvider = (nodeType, fn) => NodeInfoProviders.register(nodeType, fn);
-
-// Factory for node SpotlightItem with nested search JSON and offsets for highlighting
-function makeNodeItem ({ node, displayId, parentChain, payload }) {
-    const className = node.comfyClass || node.type;
-    const baseTitle = `${node.title || className}`;
-    const extra = NodeInfoProviders.get(node);
-    const idTag = `#${displayId}`;
-    // Include #<id> in the visible title so it can be matched and highlighted
-    const title = `${baseTitle}${extra.titleSuffix ? ' ' + extra.titleSuffix : ''} ${idTag}`;
-    let itemClass = node.type;
-    if (extra.itemClass) itemClass = extra.itemClass;
-    else if (extra.itemClassSuffix) itemClass = `${itemClass} ${extra.itemClassSuffix}`;
-
-    const subtitleNames = Array.isArray(parentChain) ? parentChain.map(p => p?.title || p?.type).filter(Boolean) : [];
-    const detailPairs = (node.widgets && Array.isArray(node.widgets)) ? node.widgets.map(w => `${w.name}:${w.value}`) : [];
-    const extraDetails = Array.isArray(extra.details) ? extra.details : [];
-    const allDetails = detailPairs.concat(extraDetails);
-
-    // Use the same display title (including #<id>) as the first element so offsets align for highlighting
-    const searchJson = [title || "", itemClass || "", subtitleNames, allDetails];
-    const { flat: searchFlat, offsets: searchOffsets } = buildSearchFromJson(searchJson);
-
-    return {
-        "@type": "node",
-        id: displayId,
-        title,
-        itemClass,
-        node,
-        itemSubtitlePath: parentChain,
-        itemDetails: allDetails.join(" "),
-        searchText: searchFlat, // keep compatibility with existing selector
-        searchJson,
-        searchFlat,
-        searchOffsets,
-        payload
-    };
-}
-
-// Expose helper for external modules
-// @ts-ignore
-window.OvumSpotlight = window.OvumSpotlight || {};
-// @ts-ignore
-window.OvumSpotlight.makeNodeItem = makeNodeItem;
 
 
 // Expose a global hook so custom nodes can register from their JS
@@ -266,97 +111,26 @@ window.OvumSpotlight.makeNodeItem = makeNodeItem;
 // Merge SpotlightRegistry into any existing OvumSpotlight object to avoid losing previously attached helpers
 window.OvumSpotlight = Object.assign(window.OvumSpotlight || {}, SpotlightRegistry);
 
-// Simple filter registry, similar to keyword registry
-// External modules can register filters by name. If no filter matches, fallback assumes filterName is a widget name.
-/** @type {IFilterRegistry} */
-const FilterRegistry = {
-    filters: new Map(), // name -> (item, value) => boolean | Promise<boolean>
-    registerFilter (name, callback) {
-        if (!name || typeof callback !== "function") return;
-        this.filters.set(String(name).toLowerCase(), callback);
-    }
-};
-
-// Expose filter API on the same global
-// @ts-ignore - augment window.OvumSpotlight with registerFilter
-window.OvumSpotlight = window.OvumSpotlight || {};
-/** @type {(name:string, fn: FilterFn)=>void} */
-// @ts-ignore
-window.OvumSpotlight.registerFilter = (name, fn) => FilterRegistry.registerFilter(name, fn);
-
-/**
- * Parse filters of the form name:value or name:"value with spaces" from the query.
- * Returns remaining text with filters removed and an array of filters.
- * @param {string} q
- * @returns {{ text:string, filters: ParsedFilter[] }}
- */
-function parseFilters (q) {
-    if (!q) return { text: "", filters: [] };
-    const filters = [];
-    // Match filter patterns of form name:value or name:"value with spaces"
-    // (\b\w+)      - Capture word boundary followed by word chars (filter name)
-    // :            - Literal colon separator
-    // (?:          - Start non-capturing group for value alternatives:
-    //   "([^"]+)"  - 1) Quoted value: quotes containing non-quote chars
-    //   |          - OR
-    //   ([^\s]+)   - 2) Unquoted value: sequence of non-whitespace chars
-    // )            - End non-capturing group
-    const re = /(\b\w+):(?:"([^"]+)"|([^\s]+))/g;
-    let m;
-    while ((m = re.exec(q)) !== null) {
-        const name = m[1];
-
-        // Extract filter value from regex groups: m[2] contains quoted value if present ("value"),
-        // m[3] contains unquoted value if no quotes (value), fallback to empty string if neither matched
-        const value = m[2] != null ? m[2] : (m[3] != null ? m[3] : "");
-        filters.push({ name, value, raw: m[0] });
-    }
-    // Remove all matched filters from the text
-    const text = q.replace(re, " ").replace(/\s+/g, " ").trim();
-    return { text, filters };
-}
-
-/**
- * Apply parsed filters to the items list. If a filter name is registered, use it; otherwise fallback to widget name matching.
- * @param {any[]} items
- * @param {{ name:string, value:string }[]} filters
- * @returns {Promise<any[]>}
- */
-async function applyFilters (items, filters) {
-    if (!Array.isArray(filters) || filters.length === 0) return items;
-    const out = [];
-    for (const it of items) {
-        let ok = true;
-        for (const f of filters) {
-            const reg = FilterRegistry.filters.get(String(f.name).toLowerCase());
-            if (reg) {
-                try {
-                    const maybe = reg(it, f.value);
-                    const passed = (typeof maybe?.then === 'function') ? await maybe : !!maybe;
-                    if (!passed) { ok = false; break; }
-                } catch (_) {
-                    ok = false; break;
-                }
-            } else {
-                // Fallback: treat name as widget name and perform case-insensitive substring match on its value
-                const node = it?.node;
-                if (!node || !Array.isArray(node.widgets)) { ok = false; break; }
-                const targetName = String(f.name).toLowerCase();
-                const targetVal = String(f.value).toLowerCase();
-                let matched = false;
-                for (const w of node.widgets) {
-                    const wName = String(w?.name ?? "").toLowerCase();
-                    if (wName === targetName) {
-                        const wVal = String(w?.value ?? "").toLowerCase();
-                        if (targetVal === "" || wVal.indexOf(targetVal) !== -1) { matched = true; break; }
-                    }
-                }
-                if (!matched) { ok = false; break; }
+// Discover and load user plugins from the backend route. Each plugin is imported
+// individually and errors are logged without aborting the iteration.
+async function loadUserPlugins() {
+    try {
+        const resp = await fetch('/spotlight/user_plugins/');
+        if (!resp?.ok) return;
+        const data = await resp.json().catch(() => null);
+        const files = Array.isArray(data?.files) ? data.files : [];
+        for (const f of files) {
+            const url = typeof f?.url === 'string' ? f.url : (typeof f?.path === 'string' ? `/spotlight/user_plugins/${f.path}` : null);
+            if (!url) continue;
+            try {
+                await import(url);
+            } catch (e) {
+                console.warn('OvumSpotlight: failed to load user plugin', f?.path || url, e);
             }
         }
-        if (ok) out.push(it);
+    } catch (e) {
+        console.warn('OvumSpotlight: failed to list user plugins', e);
     }
-    return out;
 }
 
 /**
@@ -453,6 +227,8 @@ app.registerExtension({
      * @param {import("@comfyorg/comfyui-frontend-types").ComfyApp} app
      */
     setup: async function (app) {
+        // Attempt to load any user plugins (errors are logged and ignored)
+        try { loadUserPlugins()?.catch?.(()=>{}); } catch (_) {}
         // Helper: get canvas element and DragAndScale
         const getCanvasElement = () => app?.canvas?.canvas;
         const getDS = () => app?.canvas?.ds;
@@ -516,6 +292,11 @@ app.registerExtension({
         window.OvumSpotlight.registerPaletteCommand = (cmd) => CommandRegistry.registerPaletteCommand(cmd);
         // @ts-ignore
         window.OvumSpotlight.clearPaletteCommands = () => CommandRegistry.clearPaletteCommands();
+        // Also expose a stable plugin method for registering selection commands
+        // @ts-ignore
+        window.OvumSpotlight.__registerSelectionCommandNow = (cmd) => CommandRegistry.registerPaletteCommand(cmd);
+        // @ts-ignore
+        window.OvumSpotlight.registerSelectionCommand = (cmd) => SpotlightRegistry.registerSelectionCommand(cmd);
 
         // Selection state
         const selectedMap = new Map();
@@ -662,6 +443,10 @@ app.registerExtension({
         };
 
         const renderPalettes = () => {
+            const spotlightSearchCommands = app.ui.settings.getSettingValue("ovum.spotlightSelection") ?? false;
+            if (!spotlightSearchCommands) {
+                return;
+            }
             if (!ui.palettePrimary || !ui.paletteSelection) return;
             ui.palettePrimary.innerHTML = '';
             ui.paletteSelection.innerHTML = '';
@@ -734,31 +519,16 @@ app.registerExtension({
             }
         };
 
-        // Register built-in selection commands so the palette shows default actions when items are selected
+        // Drain any selection commands registered before UI initialization
         try {
-            const builtinLabels = ['remove', 'replace', 'bypass', 'color', 'align'];
-            builtinLabels.forEach((label) => {
-                CommandRegistry.registerPaletteCommand({
-                    id: `builtin:${label}`,
-                    label,
-                    run: (ctx) => {
-                        try {
-                            // Allow external plugins to supply handlers for built-in commands via window.OvumSpotlight.__builtinHandlers
-                            // @ts-ignore
-                            const h = (window.OvumSpotlight && window.OvumSpotlight.__builtinHandlers && window.OvumSpotlight.__builtinHandlers[label]);
-                            if (typeof h === 'function') {
-                                return h(ctx);
-                            }
-                        } catch (e) {
-                            console.warn('OvumSpotlight builtin command handler error', e);
-                        }
-                        // Fallback placeholder implementation
-                        console.log('[OvumSpotlight] not implemented:', label, 'on selection:', ctx?.selected);
-                    }
+            if (Array.isArray(SpotlightRegistry.__pendingSelectionCommands) && SpotlightRegistry.__pendingSelectionCommands.length) {
+                SpotlightRegistry.__pendingSelectionCommands.forEach((cmd) => {
+                    try { CommandRegistry.registerPaletteCommand(cmd); } catch (_) {}
                 });
-            });
+                SpotlightRegistry.__pendingSelectionCommands.length = 0;
+            }
         } catch (e) {
-            console.warn('OvumSpotlight: failed to register built-in commands', e);
+            console.warn('OvumSpotlight: failed to process pending selection commands', e);
         }
 
         // Augment current FZF matches with any selected items (pin them) when select mode is active
@@ -1149,9 +919,8 @@ app.registerExtension({
                 if (Array.isArray(ex) && ex.length > 0) {
                     expandedQueries = ex;
                 }
-                console.log("Brace expansion pattern", expandedQueries.join(", "));
             } catch (_) {
-                console.log("Invalid brace expansion pattern", searchTextForFzf);
+                // console.log("Invalid brace expansion pattern", searchTextForFzf);
                 // ignore and fallback below
             }
             if (!expandedQueries || expandedQueries.length === 0) {
@@ -1165,7 +934,6 @@ app.registerExtension({
             } else if (expandedQueries.length === 0) {
                 expandedQueries = [''];
             }
-            console.log("Expanded queries", expandedQueries);
 
             // If multiple expanded queries, union the results preserving the order of each query block
             let combinedMatches = [];
@@ -1495,39 +1263,54 @@ app.registerExtension({
         ui.input.addEventListener("input", refresh);
         ui.input.addEventListener("blur", () => setTimeout(() => {
             if (state.open) {
-                // close();
+                const spotlightSearchCommands = app.ui.settings.getSettingValue("ovum.spotlightSelection") ?? false;
+                if (!spotlightSearchCommands) {
+                    close();
+                }
             }
         }, 150));
 
         app.ui.settings.addSetting({
+            category: ['ovum', 'spotlight', 'hotkey1'],
             id: "ovum.spotlightHotkey",
             name: "ovum: Spotlight hotkey",
             type: "text",
             defaultValue: "Ctrl+k"
         });
         app.ui.settings.addSetting({
+            category: ['ovum', 'spotlight', 'hotkey2'],
             id: "ovum.spotlightAlternateHotkey",
             name: "ovum: Spotlight alternate hotkey",
             type: "text",
             defaultValue: "Ctrl+Space"
         });
+        // app.ui.settings.addSetting({
+        //     category: ['ovum', 'spotlight', 'wtf'],
+        //     id: "ovum.spotlightHandlers",
+        //     name: "ovum: Spotlight handlers",
+        //     type: "text",
+        //     defaultValue: "node,link"
+        // });
         app.ui.settings.addSetting({
-            id: "ovum.spotlightHandlers",
-            name: "ovum: Spotlight handlers",
-            type: "text",
-            defaultValue: "node,link"
-        });
-        app.ui.settings.addSetting({
+            category: ['ovum', 'spotlight', 'maxMatches'],
             id: "ovum.spotlightMaxMatches",
-            name: "ovum: Spotlight max matches",
+            name: "Maximum number of matches",
             type: "number",
             defaultValue: 100
         });
         app.ui.settings.addSetting({
+            category: ['ovum', 'spotlight', 'visibleItems'],
             id: "ovum.spotlightVisibleItems",
-            name: "ovum: Spotlight visible items",
+            name: "Maximum number of visible items",
             type: "number",
             defaultValue: 6
+        });
+        app.ui.settings.addSetting({
+            category: ['ovum', 'spotlight', 'visibleItems'],
+            id: "ovum.spotlightSelection",
+            name: "Spotlight Selection Commands (ALPHA)",
+            type: "boolean",
+            defaultValue: false
         });
         // app.ui.settings.addSetting({
         //     id: "ovum.spotlightBlockSelectors",

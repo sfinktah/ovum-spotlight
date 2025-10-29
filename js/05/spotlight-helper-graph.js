@@ -129,10 +129,19 @@ export function isNumericLike (t) {
 }
 
 /**
- * Find a widget whose value best matches the given search text and return snippet + highlight positions.
- * @param {any} node
- * @param {string} searchText
- * @returns {WidgetMatch|null}
+ * Searches for a widget match within the provided node based on search text or positional and JSON information provided in options.
+ * Returns detailed information about the match if found, including the widget, its index, its name, matched value, snippet, and match positions.
+ *
+ * @param {Object} node - The node containing widget data. Expected to have a `widgets` property as an array of widget objects.
+ * @param {string} searchText - The text to search for within the widgets' properties.
+ * @param {Object} [opts] - Optional search parameters.
+ * @param {Array<number>|Set<number>} [opts.positions] - Highlight positions to match against flattened search JSON or widgets' texts.
+ * @param {Array} [opts.searchJson] - A structured JSON search context to map positions for matching specific widget tokens.
+ * @return {Object|null} An object containing match details if a match is found or null if no match is identified.
+ *                       The return object includes attributes `widget` (matched widget object or null),
+ *                       `index` (index of the matched widget), `value` (matched widget's value),
+ *                       `name` (matched widget's name), `snippet` (matching content around the match),
+ *                       `matchPositions` (positions of matched text), `prefix` (prefix text like "…"), and `suffix` (suffix text).
  */
 export function findWidgetMatch (node, searchText, opts = {}) {
     if (!node || !Array.isArray(node.widgets)) {
