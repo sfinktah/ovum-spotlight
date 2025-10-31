@@ -58,29 +58,39 @@ app.registerExtension({
         function toLinks(selected) {
             return (selected || []).map(it => it && it["@type"] === 'link' ? it.link : null).filter(Boolean);
         }
+        /**
+         * Returns array of [graph, node] pairs for selected nodes
+         * @param {SpotlightItem[]} selected
+         * @returns {[LGraph, ComfyNode][]}
+         */
+        function toGraphNodes(selected) {
+            const nodes = toNodes(selected);
+            return nodes.map(n => [n?.graph || app?.graph, n]).filter(([g, n]) => !!n);
+        }
 
         // remove: delete selected nodes and links
         reg({ id: 'builtin:remove', label: 'remove', run: ({ selected }) => {
-            const graph = getGraph();
-            if (!graph) return;
-            const nodes = toNodes(selected);
-            // const links = toLinks(selected);
-            // // Remove links first, then nodes
-            // for (const lk of links) {
-            //     try { graph.removeLink?.(lk.id ?? lk); } catch (_) {}
-            // }
-            for (const n of nodes) {
-                try { graph.remove(n); } catch (_) {}
+            const pairs = toGraphNodes(selected);
+            for (const [graph, n] of pairs) {
+                try {
+                    // Note to future self:
+                    // To find out the name of the parent subgraph for this node, you do this:
+                    // parentGraph = getGraph() // or app.graph
+                    // matches = _.filter([...parentGraph.subgraphs], ([id, sg]) =>
+                    //   _.some(sg.nodes, sgn => sgn === n)
+                    // );
+                    if (graph?.remove) graph.remove(n);
+                    else console.log("Couldn't remove node (no graph)", n);
+                } catch (e) { console.log("Couldn't remove node", n, e); }
             }
             requestDraw();
         }});
 
         // bypass: rewire simple single-in single-out nodes and remove them
         reg({ id: 'builtin:bypass', label: 'bypass', run: ({ selected }) => {
-            const graph = getGraph();
-            if (!graph) return;
-            const nodes = toNodes(selected);
-            for (const n of nodes) {
+            const pairs = toGraphNodes(selected);
+            for (const [g, n] of pairs) {
+                if (!g || !n) continue;
                 try {
                     const inSlot = (n.inputs && n.inputs[0]) ? 0 : null;
                     const outSlot = (n.outputs && n.outputs[0]) ? 0 : null;
@@ -89,35 +99,35 @@ app.registerExtension({
                     if (!(hasSingleIn && hasSingleOut)) {
                         // Try best-effort: connect all upstreams of slot 0 to all downstreams of slot 0
                         // Collect upstream
-                        const upstreamLinks = (n.inputs?.[0]?.link != null) ? [graph.getLink?.(n.inputs[0].link)] : [];
+                        const upstreamLinks = (n.inputs?.[0]?.link != null) ? [g.getLink?.(n.inputs[0].link)] : [];
                         const downstreamLinkIds = (n.outputs?.[0]?.links || []).slice();
                         for (const up of upstreamLinks) {
                             if (!up) continue;
                             for (const dId of downstreamLinkIds) {
-                                const d = graph.getLink?.(dId);
+                                const d = g.getLink?.(dId);
                                 if (!d) continue;
                                 try {
-                                    graph.connect(up.origin_id, up.origin_slot ?? 0, d.target_id, d.target_slot ?? 0);
+                                    g.connect(up.origin_id, up.origin_slot ?? 0, d.target_id, d.target_slot ?? 0);
                                 } catch (_) {}
                             }
                         }
-                        try { graph.remove?.(n); } catch (_) {}
+                        try { g.remove?.(n); } catch (_) {}
                         continue;
                     }
                     // Simple case: one input link and N output links on slot 0
                     const inLinkId = n.inputs?.[0]?.link;
                     const outLinkIds = (n.outputs?.[0]?.links || []).slice();
                     if (inLinkId != null && outLinkIds.length) {
-                        const inLink = graph.getLink?.(inLinkId);
+                        const inLink = g.getLink?.(inLinkId);
                         if (inLink) {
                             for (const lid of outLinkIds) {
-                                const outLink = graph.getLink?.(lid);
+                                const outLink = g.getLink?.(lid);
                                 if (!outLink) continue;
-                                try { graph.connect(inLink.origin_id, inLink.origin_slot ?? 0, outLink.target_id, outLink.target_slot ?? 0); } catch (_) {}
+                                try { g.connect(inLink.origin_id, inLink.origin_slot ?? 0, outLink.target_id, outLink.target_slot ?? 0); } catch (_) {}
                             }
                         }
                     }
-                    try { graph.remove?.(n); } catch (_) {}
+                    try { g.remove?.(n); } catch (_) {}
                 } catch (_) {}
             }
             requestDraw();
@@ -146,8 +156,9 @@ app.registerExtension({
 
         }
         reg({ id: 'builtin:color', label: 'color', run: ({ selected }) => {
-            const nodes = toNodes(selected);
-            if (!nodes.length) return;
+            const pairs = toGraphNodes(selected);
+            if (!pairs.length) return;
+            const nodes = pairs.map(([g, n]) => n).filter(Boolean);
             // Guess color from the first selected node title token if matches a preset; default to teal
             let picked = filter(colorMap, c => nodes[0].color === c.color || nodes[0].bgcolor === c.bgcolor);
             if (picked.length) {
@@ -177,7 +188,8 @@ app.registerExtension({
 
         // align: align selected nodes left and top with small vertical spacing
         reg({ id: 'builtin:align', label: 'align', run: ({ selected }) => {
-            const nodes = toNodes(selected);
+            const pairs = toGraphNodes(selected);
+            const nodes = pairs.map(([g, n]) => n).filter(Boolean);
             if (nodes.length < 2) return;
             const minX = Math.min(...nodes.map(n => n?.pos?.[0] ?? 0));
             let y = Math.min(...nodes.map(n => n?.pos?.[1] ?? 0));
@@ -194,7 +206,8 @@ app.registerExtension({
         // select: select given nodes and fit view to selection
         reg({ id: 'builtin:select', label: 'select', run: ({ selected, app }) => {
             try {
-                const nodes = toNodes(selected);
+                const pairs = toGraphNodes(selected);
+                const nodes = pairs.map(([g, n]) => n).filter(Boolean);
                 if (!nodes?.length) return;
                 try { app?.canvas?.selectNodes?.(nodes, false); } catch (_) {}
                 try { app?.canvas?.fitViewToSelectionAnimated?.(); } catch (_) {}
@@ -203,8 +216,8 @@ app.registerExtension({
 
         // replace: recreate nodes, optionally letting the user choose a target class via interactiveOpen
         reg({ id: 'builtin:replace', label: 'replace', run: async ({selected, args, interactiveOpen}) => {
-            const graph = getGraph();
-            const nodes = toNodes(selected);
+            const pairs = toGraphNodes(selected);
+            const nodes = pairs.map(([g, n]) => n).filter(Boolean);
             if (!nodes?.length) return;
 
             // Determine target type: from args or via interactive picker
@@ -395,7 +408,7 @@ app.registerExtension({
             }
 
             const LiteGraph = window.LiteGraph;
-            for (const node of nodes) {
+            for (const [g, node] of pairs) {
                 if (node.comfyClass || node.type) {
                     const originalType = node.comfyClass || node.type;
                     const type = targetType || originalType;
@@ -410,7 +423,6 @@ app.registerExtension({
                     try { newNode.properties = {...node.properties}; } catch(_) {}
                     // Collect links data before removal
                     const links = [];
-                    const g = (node.graph || app.graph);
                     for (const [index, output] of (node.outputs||[]).entries()) {
                         for (const linkId of output.links || []) {
                             const link = g.links?.[linkId];
@@ -428,11 +440,11 @@ app.registerExtension({
                             if (originNode) links.push({ node: originNode, slot: link.origin_slot, targetNode: newNode, targetSlot: index });
                         }
                     }
-                    try { graph.add?.(newNode); } catch(_) {}
+                    try { g.add?.(newNode); } catch(_) {}
                     for (const link of links) {
                         try { link.node.connect?.(link.slot, link.targetNode, link.targetSlot); } catch(_) {}
                     }
-                    try { graph.remove?.(node); } catch(_) {}
+                    try { g.remove?.(node); } catch(_) {}
                 }
             }
             requestDraw();
