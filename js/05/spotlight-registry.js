@@ -31,8 +31,17 @@ export const SpotlightRegistry = {
      * @param {import('./spotlight-typedefs.js').FilterFn} callback
      */
     registerFilter (name, callback) {
-        if (!name || typeof callback !== "function") return;
-        this.filters.set(String(name).toLowerCase(), callback);
+        if (typeof callback !== "function") {
+            throw new Error(`Invalid filter callback for "${String(name ?? "")}". Callback must be a function.`);
+        }
+        const s = String(name ?? "");
+        // Validate filter name: must start with a letter or underscore, followed by word characters
+        // This mirrors the parsing rule used in spotlight-filters.js
+        const isValid = /^[A-Za-z_]\w*$/.test(s);
+        if (!isValid) {
+            throw new Error(`Invalid filter name "${s}". Filter names must start with a letter or underscore and contain only letters, numbers, or underscores.`);
+        }
+        this.filters.set(s.toLowerCase(), callback);
     },
     /**
      * Register a command to appear in the Spotlight footer palettes.
