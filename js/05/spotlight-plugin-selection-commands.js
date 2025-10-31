@@ -421,6 +421,28 @@ app.registerExtension({
                     try { newNode.pos = [...node.pos]; } catch(_) { newNode.pos = node.pos ? [node.pos[0], node.pos[1]] : [0,0]; }
                     try { newNode.size = [...node.size]; } catch(_) { if (node.size) newNode.size = [node.size[0], node.size[1]]; }
                     try { newNode.properties = {...node.properties}; } catch(_) {}
+                    // Copy widget values by matching widget name
+                    try {
+                        const oldWidgets = Array.isArray(node.widgets) ? node.widgets : (node.widgets || []);
+                        const newWidgets = Array.isArray(newNode.widgets) ? newNode.widgets : (newNode.widgets || []);
+                        if (oldWidgets && newWidgets && oldWidgets.length && newWidgets.length) {
+                            const byName = new Map();
+                            for (const w of oldWidgets) {
+                                try { if (w && typeof w.name !== 'undefined') byName.set(w.name, w); } catch(_) {}
+                            }
+                            for (const nw of newWidgets) {
+                                try {
+                                    if (!nw || typeof nw.name === 'undefined') continue;
+                                    const ow = byName.get(nw.name);
+                                    if (!ow) continue;
+                                    // Copy value if both have a value field
+                                    if ('value' in ow && 'value' in nw) {
+                                        nw.value = ow.value;
+                                    }
+                                } catch(_) {}
+                            }
+                        }
+                    } catch(_) {}
                     // Collect links data before removal
                     const links = [];
                     for (const [index, output] of (node.outputs||[]).entries()) {
