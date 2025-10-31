@@ -1,4 +1,5 @@
 import {app} from "../../../scripts/app.js";
+import {getNonConnectedWidgets} from "./spotlight-helper-graph.js";
 /** @typedef {import("./spotlight-typedefs.js").ISpotlightRegistry} ISpotlightRegistry */
 /** @typedef {import("./spotlight-typedefs.js").SpotlightHandlerContext} SpotlightHandlerContext */
 /** @typedef {import("./spotlight-typedefs.js").SpotlightItem} SpotlightItem */
@@ -251,10 +252,11 @@ app.registerExtension({
             if (false) {
                 const nodes = ctx.collectAllNodesRecursive();
                 for (const {node, displayId, parentChain} of nodes) {
-                    if (!Array.isArray(node.widgets)) {
+                    const widgets = getNonConnectedWidgets(node);
+                    if (!Array.isArray(widgets)) {
                         continue;
                     }
-                    for (const w of node.widgets) {
+                    for (const w of widgets) {
                         // Heuristics to detect combobox-like widgets in ComfyUI:
                         // - w.type === 'combo' (common), or
                         // - w.options is an array or object of allowed values.

@@ -1,4 +1,5 @@
 import {app} from "../../../scripts/app.js";
+import {getNonConnectedWidgets} from "./spotlight-helper-graph.js";
 /** @typedef {import("./spotlight-typedefs.js").SpotlightUI} SpotlightUI */
 /** @typedef {import("./spotlight-typedefs.js").SubgraphPathItem} SubgraphPathItem */
 /** @typedef {import("./spotlight-typedefs.js").NodeItem} NodeItem */
@@ -41,7 +42,8 @@ app.registerExtension({
                     if (typeof makeNodeItem === 'function') {
                         return makeNodeItem({ node, displayId, parentChain });
                     }
-                    const widgetText = node.widgets && Array.isArray(node.widgets) ? node.widgets.map(w => `${w.name}:${w.value}`).join(" ") : "";
+                    const widgets = getNonConnectedWidgets(node);
+                    const widgetText = Array.isArray(widgets) ? widgets.map(w => `${w.name}:${w.value}`).join(" ") : "";
                     return ({
                         "@type": "node",
                         id: displayId,

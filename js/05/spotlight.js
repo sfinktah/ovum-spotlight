@@ -3,8 +3,8 @@
 import {app} from "../../../scripts/app.js";
 import {Fzf} from "/ovum-spotlight/node_modules/fzf/dist/fzf.es.js";
 import {braces} from "../01/braces-compat.js"
-import {buildUI, getPositionsInRange, highlightText, updateActiveState} from "./spotlight-helper-dom.js";
-import {allLinks, allNodes, collectAllNodesRecursive, findWidgetMatch, getGraph, navigateToItemAndFocus} from "./spotlight-helper-graph.js";
+import {buildUI, updateActiveState} from "./spotlight-helper-dom.js";
+import {allLinks, allNodes, collectAllNodesRecursive, getGraph, navigateToItemAndFocus} from "./spotlight-helper-graph.js";
 import {isBlockedByActiveUI, matchesHotkey} from "./spotlight-helper-hotkey.js";
 import {
     focusNodeWithOverlayAwareCenter as helperFocusNodeWithOverlayAwareCenter,
@@ -12,7 +12,7 @@ import {
 } from "./spotlight-helper-focus.js";
 import {createShowResult} from "./spotlight-helper-showresult.js";
 import {SpotlightRegistry} from "./spotlight-registry.js";
-import {buildSearchFromJson, NodeInfoProviders, makeNodeItem} from "./spotlight-nodeinfo.js";
+import {makeNodeItem} from "./spotlight-nodeinfo.js";
 import {parseFilters, applyFilters} from "./spotlight-filters.js";
 
 // Minimal Alfred-like spotlight for ComfyUI graph

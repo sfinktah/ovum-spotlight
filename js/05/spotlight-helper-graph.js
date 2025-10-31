@@ -3,6 +3,45 @@
 /** @typedef {import("./spotlight-typedefs.js").WidgetMatch} WidgetMatch */
 import {app} from "../../../scripts/app.js";
 
+/**
+ * Return a Set of input names on the node that have a truthy link (connected inputs).
+ * Comparison is case-sensitive and uses the input's declared name.
+ * @param {any} node
+ * @returns {Set<string>}
+ */
+export function getConnectedInputNameSet (node) {
+    const set = new Set();
+    try {
+        const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
+        for (const inp of inputs) {
+            const name = inp?.name;
+            const link = inp?.link;
+            if ((name ?? "") !== "" && !!link) {
+                set.add(String(name));
+            }
+        }
+    } catch (_) {
+        // ignore
+    }
+    return set;
+}
+
+/**
+ * Return the list of widgets on the node whose corresponding input is not connected.
+ * Widgets are included when there is no input with the same exact name that has a truthy link.
+ * @param {any} node
+ * @returns {any[]}
+ */
+export function getNonConnectedWidgets (node) {
+    const widgets = Array.isArray(node?.widgets) ? node.widgets : [];
+    const connected = getConnectedInputNameSet(node);
+    try {
+        return widgets.filter(w => !connected.has(String(w?.name ?? "")));
+    } catch (_) {
+        return widgets;
+    }
+}
+
 /** Get the current LiteGraph graph instance from the ComfyUI app.
  * @returns {any}
  */
@@ -148,6 +187,26 @@ export function findWidgetMatch (node, searchText, opts = {}) {
         return null;
     }
 
+    // Build a set of widget names whose corresponding node inputs are connected (i.e., have a link)
+    // This mirrors logic like: _.first(_.filter(node.inputs, i => i.name === 'steps')).link
+    // but implemented without external deps and generalized for all input names.
+    let connectedInputNamesLower = new Set();
+    try {
+        const inputs = Array.isArray(node.inputs) ? node.inputs : [];
+        for (const inp of inputs) {
+            const name = inp?.name;
+            const link = inp?.link;
+            if ((name ?? '') !== '' && !!link) {
+                connectedInputNamesLower.add(String(name).toLowerCase());
+            }
+        }
+    } catch (_) {
+        connectedInputNamesLower = new Set();
+    }
+    if (!node || !Array.isArray(node.widgets)) {
+        return null;
+    }
+
     // If positions and searchJson are provided, map highlight positions onto the flattened searchJson
     // to find the exact widget token that was matched (e.g., "dense_vace_blocks:2").
     try {
@@ -243,7 +302,10 @@ export function findWidgetMatch (node, searchText, opts = {}) {
                             matchPositions = entryMatchPositions;
                             prefix = entry.start > 0 ? "… " : "";
                         }
-                        return { widget: widgetObj ?? null, index: widgetIndex, value: valueStr, name, snippet, matchPositions, prefix, suffix };
+                        if (!connectedInputNamesLower.has(lowerName)) {
+                            return { widget: widgetObj ?? null, index: widgetIndex, value: valueStr, name, snippet, matchPositions, prefix, suffix };
+                        }
+                        // If the matched widget corresponds to a connected input, skip returning here to allow fallback logic to try other matches.
                     }
                 }
             }
@@ -277,31 +339,37 @@ export function findWidgetMatch (node, searchText, opts = {}) {
         const idxFull = lc.indexOf(hayFull);
         if (idxFull !== -1) {
             const name = String(widget?.name ?? "Widget");
-            const positionsAbs = [];
-            for (let p = idxFull; p < idxFull + hayFull.length; p++) positionsAbs.push(p);
-            // Build snippet centered around the match
-            const context = 12;
-            const minIdx = Math.min(...positionsAbs);
-            const maxIdx = Math.max(...positionsAbs) + 1;
-            const snippetStart = Math.max(0, minIdx - context);
-            const snippetEnd = Math.min(valueStr.length, maxIdx + context);
-            // Enforce a hard cap of 32 characters for the displayed snippet
-            let sStart = snippetStart;
-            let sEnd = snippetEnd;
-            const maxLen = 32;
-            if ((sEnd - sStart) > maxLen) {
-                const center = Math.floor((minIdx + maxIdx) / 2);
-                sStart = Math.max(0, center - Math.floor(maxLen / 2));
-                sEnd = Math.min(valueStr.length, sStart + maxLen);
-                // ensure match still fully visible
-                if (sStart > minIdx) sStart = Math.max(0, minIdx);
-                if (sEnd < maxIdx) sEnd = Math.min(valueStr.length, maxIdx);
+            const lowerWidgetName = name.toLowerCase();
+            if (connectedInputNamesLower.has(lowerWidgetName)) {
+                // skip widgets whose inputs are connected
+                // continue scanning other widgets
+            } else {
+                const positionsAbs = [];
+                for (let p = idxFull; p < idxFull + hayFull.length; p++) positionsAbs.push(p);
+                // Build snippet centered around the match
+                const context = 12;
+                const minIdx = Math.min(...positionsAbs);
+                const maxIdx = Math.max(...positionsAbs) + 1;
+                const snippetStart = Math.max(0, minIdx - context);
+                const snippetEnd = Math.min(valueStr.length, maxIdx + context);
+                // Enforce a hard cap of 32 characters for the displayed snippet
+                let sStart = snippetStart;
+                let sEnd = snippetEnd;
+                const maxLen = 32;
+                if ((sEnd - sStart) > maxLen) {
+                    const center = Math.floor((minIdx + maxIdx) / 2);
+                    sStart = Math.max(0, center - Math.floor(maxLen / 2));
+                    sEnd = Math.min(valueStr.length, sStart + maxLen);
+                    // ensure match still fully visible
+                    if (sStart > minIdx) sStart = Math.max(0, minIdx);
+                    if (sEnd < maxIdx) sEnd = Math.min(valueStr.length, maxIdx);
+                }
+                const snippet = valueStr.slice(sStart, sEnd);
+                const matchPositions = positionsAbs.map(p => p - sStart);
+                const prefix = sStart > 0 ? "…" : "";
+                const suffix = sEnd < valueStr.length ? "…" : "";
+                return { widget, index: i, value: valueStr, name, snippet, matchPositions, prefix, suffix };
             }
-            const snippet = valueStr.slice(sStart, sEnd);
-            const matchPositions = positionsAbs.map(p => p - sStart);
-            const prefix = sStart > 0 ? "…" : "";
-            const suffix = sEnd < valueStr.length ? "…" : "";
-            return { widget, index: i, value: valueStr, name, snippet, matchPositions, prefix, suffix };
         }
 
         // Otherwise, accumulate matches for any tokens present in the value
@@ -314,18 +382,23 @@ export function findWidgetMatch (node, searchText, opts = {}) {
         }
         if (positionsAbs.length) {
             const name = String(widget?.name ?? "Widget");
-            // Build snippet around the union of token matches
-            positionsAbs.sort((a,b)=>a-b);
-            const context = 12;
-            const minIdx = positionsAbs[0];
-            const maxIdx = positionsAbs[positionsAbs.length - 1] + 1;
-            const snippetStart = Math.max(0, minIdx - context);
-            const snippetEnd = Math.min(valueStr.length, maxIdx + context);
-            const snippet = valueStr.slice(snippetStart, snippetEnd);
-            const matchPositions = positionsAbs.map(p => p - snippetStart);
-            const prefix = snippetStart > 0 ? "…" : "";
-            const suffix = snippetEnd < valueStr.length ? "…" : "";
-            return { widget, index: i, value: valueStr, name, snippet, matchPositions, prefix, suffix };
+            const lowerWidgetName = name.toLowerCase();
+            if (connectedInputNamesLower.has(lowerWidgetName)) {
+                // skip widgets whose inputs are connected
+            } else {
+                // Build snippet around the union of token matches
+                positionsAbs.sort((a,b)=>a-b);
+                const context = 12;
+                const minIdx = positionsAbs[0];
+                const maxIdx = positionsAbs[positionsAbs.length - 1] + 1;
+                const snippetStart = Math.max(0, minIdx - context);
+                const snippetEnd = Math.min(valueStr.length, maxIdx + context);
+                const snippet = valueStr.slice(snippetStart, snippetEnd);
+                const matchPositions = positionsAbs.map(p => p - snippetStart);
+                const prefix = snippetStart > 0 ? "…" : "";
+                const suffix = snippetEnd < valueStr.length ? "…" : "";
+                return { widget, index: i, value: valueStr, name, snippet, matchPositions, prefix, suffix };
+            }
         }
     }
     return null;

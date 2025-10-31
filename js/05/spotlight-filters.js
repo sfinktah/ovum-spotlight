@@ -2,6 +2,7 @@
 /** @typedef {import("./spotlight-typedefs.js").FilterFn} FilterFn */
 /** @typedef {import("./spotlight-typedefs.js").ParsedFilter} ParsedFilter */
 import {SpotlightRegistry} from "./spotlight-registry.js";
+import {getNonConnectedWidgets} from "./spotlight-helper-graph.js";
 
 // Ensure global API exposes registerFilter via SpotlightRegistry
 // @ts-ignore
@@ -17,7 +18,8 @@ export function parseFilters (q) {
     if (!q) return { text: "", filters: [] };
     const filters = [];
     // Match filter patterns of form name:value or name:"value with spaces"
-    const re = /(\b\w+):(?:"([^"]+)"|([^\s]+))/g;
+    // Important: ignore filters whose name starts with a number (e.g., "521:123" should NOT be treated as a filter)
+    const re = /(\b[A-Za-z_]\w*):(?:"([^"]+)"|([^\s]+))/g;
     let m;
     while ((m = re.exec(q)) !== null) {
         const name = m[1];
@@ -51,16 +53,18 @@ export async function applyFilters (items, filters) {
                     ok = false; break;
                 }
             } else {
-                // Fallback: treat name as widget name and perform case-insensitive substring match on its value
+                // Fallback: treat name as widget name and perform case-sensitive substring match on its value.
+                // Only consider widgets whose corresponding inputs are not connected.
                 const node = it?.node;
                 if (!node || !Array.isArray(node.widgets)) { ok = false; break; }
-                const targetName = String(f.name).toLowerCase();
-                const targetVal = String(f.value).toLowerCase();
+                const targetName = String(f.name);
+                const targetVal = String(f.value);
                 let matched = false;
-                for (const w of node.widgets) {
-                    const wName = String(w?.name ?? "").toLowerCase();
+                const widgets = getNonConnectedWidgets(node);
+                for (const w of widgets) {
+                    const wName = String(w?.name ?? "");
                     if (wName === targetName) {
-                        const wVal = String(w?.value ?? "").toLowerCase();
+                        const wVal = String(w?.value ?? "");
                         if (targetVal === "" || wVal.indexOf(targetVal) !== -1) { matched = true; break; }
                     }
                 }

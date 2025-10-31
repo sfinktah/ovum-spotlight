@@ -1,5 +1,6 @@
 // Node info providers and search JSON utilities for Spotlight
 import {buildUI} from "./spotlight-helper-dom.js"; // ensure side-effects bundle styles in some builds (safe noop here)
+import {getNonConnectedWidgets} from "./spotlight-helper-graph.js";
 
 /** Build flat search text and offsets from nested array [title, itemClass, subtitleNames[], detailPairs[]] */
 export function buildSearchFromJson (searchJson) {
@@ -108,7 +109,9 @@ export function makeNodeItem ({ node, displayId, parentChain, payload }) {
     else if (extra.itemClassSuffix) itemClass = `${itemClass} ${extra.itemClassSuffix}`;
 
     const subtitleNames = Array.isArray(parentChain) ? parentChain.map(p => p?.title || p?.type).filter(Boolean) : [];
-    const detailPairs = (node.widgets && Array.isArray(node.widgets)) ? node.widgets.map(w => `${w.name}:${w.value}`) : [];
+    // Only include non-connected widgets in details and keep case-sensitive names/values
+    const widgets = getNonConnectedWidgets(node);
+    const detailPairs = Array.isArray(widgets) ? widgets.map(w => `${w.name}:${w.value}`) : [];
     const extraDetails = Array.isArray(extra.details) ? extra.details : [];
     const allDetails = detailPairs.concat(extraDetails);
 
