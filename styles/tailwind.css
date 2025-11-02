@@ -1,8 +1,9 @@
 /* Tailwind CSS entry for ovum-spotlight */
 /* Scans JS and HTML files for class names (configured in package.json: tailwind.content) */
-@import "tailwindcss";
-
 @plugin "daisyui";
 
-/* Project-specific CSS */
+/* Scope all generated Tailwind/DaisyUI styles to .ovum-spotlight and descendants */
+:where(.ovum-spotlight) { @import "tailwindcss"; }
+
+/* Project-specific CSS (already scoped with .ovum-spotlight selectors) */
 @import "./spotlight.css";
