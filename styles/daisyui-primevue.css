@@ -1,0 +1,56 @@
+/* CSS */
+/* DaisyUI theme from PrimeVue/Comfy variables */
+@layer base {
+  :where(:root, [data-theme="primevue-sync"], .ovum-spotlight) {
+    /* Core brand */
+    --p: var(--theme-color, var(--color-highlight, #60a5fa));         /* primary */
+    --pc: var(--p-contrast, var(--p-primary-contrast-color, #18181b));/* primary-content */
+    --s: var(--p-surface-500, var(--p-surface-600, #71717a));         /* secondary: neutralish */
+    --sc: var(--content-fg, var(--p-text-color, #fff));               /* secondary-content */
+
+    --a: var(--color-muted, #a1a1aa);                                 /* accent */
+    --ac: var(--content-fg, var(--p-text-color, #fff));               /* accent-content */
+
+    --n: var(--border-color, var(--p-surface-700, #3f3f46));          /* neutral (borders/darker surfaces) */
+    --nc: var(--content-fg, var(--p-text-color, #fff));               /* neutral-content */
+
+    --b1: var(--content-bg, var(--comfy-menu-bg, var(--bg-color, #202020)));  /* base-100 */
+    --b2: var(--comfy-menu-secondary-bg, var(--p-surface-800, #27272a));      /* base-200 */
+    --b3: var(--content-hover-bg, var(--p-surface-900, #18181b));             /* base-300 */
+    --bc: var(--content-fg, var(--p-text-color, #fff));                        /* base-content */
+
+    /* Feedback colors map to your PV tokens */
+    --in: var(--p-button-info-background, #38bdf8);    /* info */
+    --su: var(--p-button-success-background, #4ade80); /* success */
+    --wa: var(--p-button-warn-border-color, #fb923c);  /* warning */
+    --er: var(--p-toast-error-color, #ef4444);         /* error */
+
+    /* Focus styling aligned with PV */
+    --focus: var(--p-button-primary-focus-ring-color, var(--p-focus-ring-color, var(--theme-color, #60a5fa)));
+
+    /* DaisyUI v5 token aliases so components like .btn-primary resolve colors */
+    --color-primary: var(--p);
+    --color-primary-content: var(--pc);
+    --color-secondary: var(--s);
+    --color-secondary-content: var(--sc);
+    --color-accent: var(--a);
+    --color-accent-content: var(--ac);
+    --color-neutral: var(--n);
+    --color-neutral-content: var(--nc);
+    --color-base-100: var(--b1);
+    --color-base-200: var(--b2);
+    --color-base-300: var(--b3);
+    --color-info: var(--in);
+    --color-success: var(--su);
+    --color-warning: var(--wa);
+    --color-error: var(--er);
+
+    /* Optional radius */
+    --rounded-box: 0.6rem;
+    --rounded-btn: 0.5rem;
+    --rounded-badge: 1.9rem;
+  }
+}
+
+/* Activate the theme by setting data-theme on <html> */
+:root[data-theme="primevue-sync"] {}

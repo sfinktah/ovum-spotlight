@@ -7,3 +7,4 @@
 
 /* Project-specific CSS (already scoped with .ovum-spotlight selectors) */
 @import "./spotlight.css";
+@import "./daisyui-primevue.css";
