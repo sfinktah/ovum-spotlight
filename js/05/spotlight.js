@@ -972,7 +972,16 @@ app.registerExtension({
 
                     return false;
                 })
-                .sort((a, b) => (b.score || 0) - (a.score || 0))
+                .sort((a, b) => {
+                    // Primary: higher score first
+                    const scoreDelta = (b.score || 0) - (a.score || 0);
+                    if (scoreDelta !== 0) return scoreDelta;
+                    // Secondary: lowest start first. Fallback to earliest matched position if start is missing.
+                    const aStart = (typeof a.start === 'number') ? a.start : (a.positions && a.positions.size ? Math.min(...Array.from(a.positions)) : Infinity);
+                    const bStart = (typeof b.start === 'number') ? b.start : (b.positions && b.positions.size ? Math.min(...Array.from(b.positions)) : Infinity);
+                    if (aStart !== bStart) return aStart - bStart;
+                    return 0;
+                })
                 .slice(0, maxMatches);
             const matches = augmentMatchesWithSelection(baseMatches);
             state.results = matches;
