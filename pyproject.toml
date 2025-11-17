@@ -1,7 +1,7 @@
 [project]
 name = "ovum-spotlight"
 description = "Spotlight: An extensible, magical, and essential search bar for ComfyUI"
-version = "1.0.143"
+version = "1.0.144"
 dependencies = [
     "aiohttp",
     "requests",
